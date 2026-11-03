@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 10 · Caching</title>
+<meta name="description" content="สรุป Week 10: Caching, st.cache_data, st.cache_resource และการใช้ model อย่างมีประสิทธิภาพ">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .ctable td, .ctable th { font-size: 14px; padding: 6px 10px; }
+  .ctable tr.new td { animation: flash .9s ease-out; }
+  .ctable .exp { color: var(--muted); font-size: 12.5px; }
+  .user-box .out { min-height: 0; }
+  .two-user { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .shared-obj { text-align: center; padding: 10px; border: 2px dashed var(--border); border-radius: 10px; margin: 10px 0; }
+  .shared-obj.res { border-color: var(--w10); }
+  @media (max-width: 720px) { .two-user { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body class="w10" data-page="w10">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">● Week 10 · Lab 10</span>
+  <h1>Caching and Efficient Model Integration<br><span class="muted" style="font-size:.6em;font-weight:500">Reuse previous work correctly</span></h1>
+  <p class="lead">Week 9 สอนว่าทุกการโต้ตอบทำให้ script <b>rerun ทั้งไฟล์</b> ซึ่งทำให้งานหนัก เช่น โหลดไฟล์ใหญ่ เรียก API หรือโหลด model ถูกทำซ้ำ สัปดาห์นี้จึงเรียน <b>caching</b> คือการเก็บผลลัพธ์เดิมไว้ใช้ซ้ำ <b>อย่างถูกต้อง</b></p>
+  <div class="meta"><span class="chip w10">Week 10</span><span class="chip">Cache identity · Data copies · Shared resources · Model lifecycle</span><span class="chip exam">★ = ออกสอบบ่อย</span></div>
+</section>
+
+<div class="callout key">
+  <div class="callout-title">🧭 เส้นทางการเรียนสัปดาห์นี้: Cache เมื่อเข้าใจเรื่อง rerun แล้วเท่านั้น</div>
+  <p style="margin:0 0 6px">Streamlit รัน Python file จากบนลงล่าง<b>เมื่อ source code เปลี่ยน หรือเมื่อผู้ใช้โต้ตอบ</b></p>
+  <ol style="margin:0">
+    <li><b>Problem</b>: การโต้ตอบกับ widget ทำให้ script rerun งานช้า ๆ จึงถูกทำซ้ำ</li>
+    <li><b>Mechanism</b>: Streamlit ตรวจ <b>function code และค่า input</b> ก่อนตัดสินใจว่าจะคำนวณใหม่หรือไม่</li>
+    <li><b>Choice</b>: ใช้ <code>cache_data</code> กับ <b>data</b> และ <code>cache_resource</code> กับ <b>shared resources</b></li>
+  </ol>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">1</span> ปัญหา: Rerun ทำให้งานที่ไม่ได้เปลี่ยนถูกทำซ้ำ <span class="chip w10">W10</span></h2>
+<p>ย้อนกลับไปที่ Week 9: widget นอก form เปลี่ยนค่าเมื่อไหร่ script ก็ rerun จากบนลงล่าง</p>
+<script type="text/plain" class="code" data-title="main.py — repeated work">
+model = load_model()                 ##! **ปัญหา**: ทุก rerun บรรทัดนี้ถูกเรียกใหม่ ถ้าโหลด 8 วินาที ผู้ใช้ต้องรอ 8 วินาทีทุกครั้ง ทั้งที่ model ไม่ได้เปลี่ยน
+text = st.text_input("Input")        ##! พิมพ์ข้อความใหม่ → rerun → `load_model()` ถูกเรียกอีกครั้ง
+if st.button("Predict"):
+    result = model.predict(text)
+    st.write("You entered:", text)
+</script>
+<div class="flow">
+  <div class="step"><b>1</b>Widget เปลี่ยน → script rerun</div><div class="arrow">→</div>
+  <div class="step"><b>2</b><code>load_model()</code> ถูกรันอีก</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>ผู้ใช้รอ 8 วินาทีอีกรอบ</div>
+</div>
+<div class="callout exam"><div class="callout-title">★ คำถามชวนคิดจากสไลด์</div>ถ้า model ไม่ได้เปลี่ยน ทำไมต้องโหลดใหม่ทุกครั้งที่ข้อความเปลี่ยน? → คำตอบคือ<b>ไม่ควร</b> จึงต้องใช้ cache</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">2</span> ทำไมต้อง Caching <span class="chip w10">W10</span></h2>
+<p>งานหนักที่ถูกทำซ้ำทำให้แอป <b>“รู้สึกช้า”</b> แบ่งได้ 3 แบบ</p>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Read large files</span>CSV, Excel, JSON, รูปภาพ หรือ dataset ที่เตรียมไว้แล้ว</div>
+  <div class="card"><span class="label">B · Call external services</span>API และ database อาจ<b>ช้า เสียเงิน หรือติด rate limit</b></div>
+  <div class="card"><span class="label">C · Prepare AI tools</span>Models, tokenizers, vector indexes และ embeddings ใช้ทั้งเวลาและ memory</div>
+</div>
+<div class="flow"><div class="step"><b>ทุก rerun</b>ได้ผลลัพธ์เหมือนเดิม</div><div class="arrow">→</div><div class="step"><b>แต่</b>ต้องรอนานขึ้น</div></div>
+<div class="callout key"><div class="callout-title">💡 Key point</div><b>Cache งานที่ “แพง (expensive)” และ “คงที่พอ (stable enough)” ที่จะใช้ซ้ำข้าม rerun ได้</b></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">3</span> Caching ทำงานอย่างไร: HIT vs MISS <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<p><b>Caching</b> คือการ<b>เก็บผลลัพธ์ที่เคยคำนวณไว้</b> เพื่อนำกลับมาใช้ใหม่เมื่อเจองานเดิม</p>
+<div class="flow">
+  <div class="step"><b>1</b>ผู้ใช้โต้ตอบ widget</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Rerun code</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>เรียก cached function: parameter หรือ code <u>เปลี่ยนไหม?</u></div><div class="arrow">→</div>
+  <div class="step"><b>NO → HIT</b>ใช้ผลจาก cache</div><div class="arrow">/</div>
+  <div class="step"><b>YES → MISS</b>รันฟังก์ชันแล้วเก็บผล</div>
+</div>
+<div class="compare">
+  <div class="good"><span class="label">Cache HIT</span>
+    <p>มี entry ที่ตรงกันและยังใช้ได้อยู่ (matching valid entry exists)</p>
+    <ul><li>นำผลที่เก็บไว้มาใช้ซ้ำ</li><li><b>Function body ไม่ถูกรัน</b></li><li>Fast path: คืนค่าจาก cache ทันที</li></ul></div>
+  <div class="bad"><span class="label">Cache MISS</span>
+    <p>ไม่มี entry ที่ตรงกันหรือยังใช้ได้</p>
+    <ul><li><b>Execute the function</b> (รัน body จริง)</li><li><b>Store its returned result</b> เก็บผลไว้</li><li>Slow path: สร้าง entry ใหม่</li></ul></div>
+</div>
+<p class="small muted">แนวคิด hit/miss นี้เป็น <b>framework-independent model</b> ใช้ได้กับ cache ทุกระบบ ไม่ได้มีแค่ใน Streamlit</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">4</span> ตามรอยทีละ call: <code>slow_square</code> <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<script type="text/plain" class="code" data-title="slow_square.py">
+@st.cache_data              ##! decorator บอก Streamlit ว่าให้ cache ผลลัพธ์ของฟังก์ชันนี้
+def slow_square(x):
+    time.sleep(3)           ##! จำลองงานช้า 3 วินาที จะรันเฉพาะตอน **MISS**
+    return x * x            ##! ค่าที่ return ถูกเก็บลง cache โดยมี `x` เป็นส่วนหนึ่งของ key
+</script>
+<div class="grid c2">
+  <div class="table-wrap" style="margin:0"><table>
+    <thead><tr><th>Call</th><th>ผล</th><th>เกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td><code>slow_square(5)</code></td><td class="miss">MISS</td><td>คำนวณ 25 แล้วเก็บ</td></tr>
+      <tr><td><code>slow_square(5)</code></td><td class="hit">HIT</td><td>คืน 25 ทันที (ไม่ sleep)</td></tr>
+      <tr><td><code>slow_square(7)</code></td><td class="miss">MISS</td><td>คำนวณ 49 แล้วเก็บ</td></tr>
+      <tr><td><code>slow_square(5)</code></td><td class="hit">HIT</td><td>คืน 25 ทันที</td></tr>
+    </tbody></table></div>
+  <div class="table-wrap" style="margin:0"><table>
+    <thead><tr><th>Cache key</th><th>Cached result</th></tr></thead>
+    <tbody><tr><td><code>slow_square(5)</code></td><td>25</td></tr><tr><td><code>slow_square(7)</code></td><td>49</td></tr></tbody></table></div>
+</div>
+<div class="callout key"><div class="callout-title">💡 ข้อที่มักเข้าใจผิด</div>ฟังก์ชันที่ถูก cache <b>ไม่ได้มีค่าที่ cache ไว้แค่ค่าเดียว</b> แต่มี<b>ได้หลาย entry คือ 1 entry ต่อ 1 cache identity</b> (ต่อชุด argument ที่ต่างกัน)</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Cache Simulator: HIT / MISS / ttl / max_entries / clear()</div>
+  <div class="sim-body">
+    <p class="howto">ใส่ค่า <code>x</code> แล้วกด <b>Rerun</b> (เหมือนผู้ใช้เปลี่ยน widget) ลองเรียกค่าเดิมซ้ำ ตั้ง <code>ttl</code> หรือ <code>max_entries</code> กด <code>.clear()</code> หรือกด “แก้ source code” แล้วสังเกตว่าบรรทัดสีเขียว (ส่วนที่รันจริง) เปลี่ยนไปอย่างไร</p>
+    <div class="row" style="margin-bottom:10px">
+      <label>x = <input type="number" id="csX" value="5" style="width:80px"></label>
+      <button class="btn primary" id="csRun" type="button">Rerun (เรียก slow_square(x))</button>
+      <label>ttl <select id="csTtl"><option value="">None</option><option value="10">10 วินาที</option><option value="30">30 วินาที</option></select></label>
+      <label>max_entries <select id="csMax"><option value="">None</option><option value="2">2</option><option value="3">3</option></select></label>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn danger sm" id="csClear" type="button">slow_square.clear()</button>
+      <button class="btn sm" id="csEdit" type="button">✎ แก้ source code ของฟังก์ชัน</button>
+      <label class="small"><input type="checkbox" id="csFast"> ข้ามแอนิเมชัน</label>
+    </div>
+    <div class="grid c2">
+      <div id="csCode"></div>
+      <div>
+        <div class="panel"><span class="label">Cache table ของ slow_square (code version <span id="csVer">1</span>)</span>
+          <div class="table-wrap" style="margin:4px 0 0"><table class="ctable"><thead><tr><th>Cache key</th><th>Result</th><th>อายุ</th></tr></thead><tbody id="csTable"><tr><td colspan="3" class="muted">ว่าง</td></tr></tbody></table></div>
+        </div>
+        <div class="out" id="csOut" style="margin-top:10px">Result: -</div>
+        <div class="out log small" id="csLog" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">5</span> CRITICAL: Cache ข้าม “function body” ไม่ได้ข้าม “script rerun” <span class="chip w10">W10</span><span class="chip exam">★★★</span></h2>
+<div class="flow">
+  <div class="step"><b>1</b>Widget interaction</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Script reruns</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Cached function ถูกเรียก</div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Lookup decides HIT/MISS</div>
+</div>
+<div class="compare">
+  <div class="a"><span class="label">การตัดสินใจเกิด “ภายใน” rerun</span>
+    <ul><li><b>HIT</b> → ข้าม body ของ cached function</li><li><b>MISS</b> → รัน body แล้วเก็บผล</li></ul></div>
+  <div class="a"><span class="label">ส่วนอื่นของ script</span>
+    <p><b>ยังรันจากบนลงล่างตามปกติ</b> เช่น <code>st.title</code>, widget, <code>st.write</code> ทั้งหมดรันทุกรอบ</p></div>
+</div>
+<div class="callout exam"><div class="callout-title">★ ประโยคที่ควรเขียนในข้อสอบ</div>“A Streamlit interaction <b>still reruns the script</b>; a cache hit skips <b>only the cached function body</b>.” แยกให้ออกระหว่าง <b>Rerun</b> (ยังเกิดอยู่) กับ <b>Recomputation</b> (ถูกข้ามเมื่อ HIT)</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">6</span> Cache Identity: ต้อง “งานเดียวกัน” ถึงจะ HIT <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<p>Streamlit ต้องตัดสินว่า call นี้คือ<b>งานที่เคยทำไปแล้ว</b>หรือเปล่า โดยดู 3 อย่าง (เป็นแนวคิดของ <b>cache key</b>)</p>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Cached function</span>เป็นฟังก์ชันที่ decorate ตัวเดียวกัน</div>
+  <div class="card"><span class="label">B · Relevant arguments</span>ค่า argument ตรงกับ call ก่อนหน้า (ยกเว้น argument ที่ตั้งใจตัดออก เช่นที่ขึ้นต้นด้วย <code>_</code>)</div>
+  <div class="card"><span class="label">C · Function code</span>Source code ของฟังก์ชันที่ cache ไว้<b>ยังไม่ถูกแก้</b></div>
+</div>
+<div class="callout key"><div class="callout-title">💡 Key point</div>ถ้า identity เปลี่ยนแม้แต่อย่างเดียว → <b>cache miss → คำนวณ entry ใหม่</b></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">7</span> Basic usage: 2 decorators ที่ครอบคลุมเกือบทุกกรณี <span class="chip w10">W10</span><span class="chip exam">★★★</span></h2>
+<div class="compare">
+  <div class="a"><span class="label">A · Data cache</span>
+<script type="text/plain" class="code">
+@st.cache_data
+def load_dataframe(path):
+    return pd.read_csv(path)
+</script>
+    <p>ใช้กับ <b>data ที่ได้จากการคำนวณ</b> เช่น DataFrames, arrays, dicts, lists, strings และ numbers</p></div>
+  <div class="a"><span class="label">B · Resource cache</span>
+<script type="text/plain" class="code">
+@st.cache_resource
+def load_model():
+    return pipeline("sentiment-analysis")
+</script>
+    <p>ใช้กับ <b>shared resources</b> เช่น ML models, database connections, engines และ persistent handles</p></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">8</span> <code>st.cache_data</code>: เก็บผลลัพธ์แล้วคืน “สำเนาใหม่” <span class="chip w10">W10</span><span class="chip exam">★</span></h2>
+<h3>ก่อน cache: เห็นต้นทุนก่อน</h3>
+<script type="text/plain" class="code" data-title="without_cache.py">
+import streamlit as st
+import time
+st.title("Caching demonstration")
+st.button('Test cache')                 ##! กดปุ่มนี้ → rerun ทั้งไฟล์
+st.subheader("st.cache_data")
+def cach_example(count):                ##! **ไม่มี decorator** ทุก rerun จึงต้องรอ 5 วินาที
+    for i in range(1, count):
+        time.sleep(1)                   ##! รอบละ 1 วินาที `range(1, 6)` = 5 รอบ = 5 วินาที
+        st.write('.'*i)                 ##! แสดงจุดเพิ่มทีละรอบ
+    ans = pow(count, 2)
+    return ans
+out = cach_example(6)
+st.write(f'Answer: {out}')              ##! Answer: 36
+</script>
+<h3>หลัง cache</h3>
+<script type="text/plain" class="code" data-title="with_cache.py" data-hl="6">
+import streamlit as st
+import time
+st.title("Caching demonstration")
+st.button('Test cache')
+st.subheader("st.cache_data")
+@st.cache_data                          ##! เพิ่มบรรทัดเดียว: run แรก (MISS) ยังรอ 5 วินาที แต่กด Test cache ครั้งต่อไปจะ HIT และคืน 36 ทันที
+def cach_example(count):
+    for i in range(1, count):
+        time.sleep(1)
+        st.write('.'*i)                 ##! บรรทัดนี้อยู่ใน body จึง **ไม่ถูกรันตอน HIT** (Streamlit จะ replay element ที่ฟังก์ชันเคยแสดงไว้ให้)
+    ans = pow(count, 2)
+    return ans
+out = cach_example(6)                   ##! args `count=6` เหมือนเดิม → HIT
+st.write(f'Answer: {out}')
+</script>
+<div class="grid c3">
+  <div class="card"><span class="label">MISS</span>รันฟังก์ชัน แล้ว <b>serialize</b> ผลลัพธ์เก็บลง cache</div>
+  <div class="card"><span class="label">HIT</span><b>Deserialize</b> ค่าที่เก็บไว้แทนการรัน body</div>
+  <div class="card"><span class="label">CALLER</span>ผู้เรียก<b>ได้สำเนาของตัวเอง</b> เหมาะกับการโหลดข้อมูล transform ผล API และ inference outputs</div>
+</div>
+<div class="callout analogy"><div class="callout-title">🧠 เปรียบเทียบ</div><code>cache_data</code> เหมือน<b>ร้านถ่ายเอกสาร</b> ต้นฉบับเก็บไว้ที่ร้าน ใครมาขอก็ได้<b>สำเนาใหม่</b>ไป จะขีดเขียนสำเนาของตัวเองยังไง ต้นฉบับก็ไม่เปลี่ยน</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">9</span> <code>st.cache_resource</code>: ใช้ object ตัวเดียวร่วมกัน <span class="chip w10">W10</span><span class="chip exam">★</span></h2>
+<script type="text/plain" class="code" data-title="cache_resource_example.py">
+import numpy as np
+from sklearn.linear_model import LinearRegression
+st.subheader("st.cache_resource")
+@st.cache_resource                                   ##! ใช้กับ model เพราะต้องการ object ตัวเดียวที่ใช้ซ้ำได้ ไม่ต้องการสำเนา
+def create_simple_linear_regression():
+    time.sleep(3)                                    ##! จำลองการ train ที่ช้า (เกิดเฉพาะตอน MISS)
+    X = np.array([1,2,3,4,5,6,7]).reshape(-1,1)      ##! `reshape(-1,1)` ทำให้เป็น 2D (n แถว × 1 feature) ตามที่ scikit-learn ต้องการ
+    y = np.array([10,20,30,40,50,60,70])
+    model = LinearRegression().fit(X, y)             ##! train model: เรียนรู้ y = 10x
+    return model
+lr = create_simple_linear_regression()               ##! HIT: ได้ **instance เดิม** (ไม่ใช่สำเนา)
+X_pred = np.array([11]).reshape(-1,1)
+pred = lr.predict(X_pred)
+st.write(f'Predicted number is {pred[0]}')           ##! ได้ประมาณ 110.0
+</script>
+<div class="grid c3">
+  <div class="card"><span class="label">MISS</span>สร้างหรือโหลด resource แล้ว<b>เก็บ object นั้นไว้ใน cache</b></div>
+  <div class="card"><span class="label">HIT</span>คืน <b>cached instance ตัวเดิม</b> ไม่มีการทำสำเนาให้ผู้เรียก</div>
+  <div class="card"><span class="label">RESPONSIBILITY</span>Global shared resource ต้อง<b>ปลอดภัยต่อการใช้พร้อมกัน (thread-safe)</b> และต้องเลี่ยงการ mutate แบบไม่ปลอดภัย</div>
+</div>
+<div class="table-wrap"><table>
+<thead><tr><th>คุณสมบัติ</th><th>คำอธิบาย</th></tr></thead>
+<tbody>
+<tr><td><b>A · Shared object</b></td><td>object ที่ cache ไว้ถูกใช้ซ้ำ<b>ข้าม rerun และข้าม session</b> (ทุก user ใช้ตัวเดียวกัน)</td></tr>
+<tr><td><b>B · No copy</b></td><td>Streamlit คืน <b>object instance ตัวเดียวกัน</b>จาก cache</td></tr>
+<tr><td><b>C · Must be safe</b></td><td>global resource ควร <b>thread-safe</b> เพราะหลาย session อาจใช้พร้อมกัน</td></tr>
+</tbody></table></div>
+<div class="callout key"><div class="callout-title">💡 Key point</div><code>cache_resource</code> <b>ประหยัด memory</b> สำหรับ object แพง ๆ อย่าง ML models และ database connections เพราะมีแค่ตัวเดียวในหน่วยความจำ</div>
+<div class="callout analogy"><div class="callout-title">🧠 เปรียบเทียบ</div><code>cache_resource</code> เหมือน<b>ไวท์บอร์ดหน้าห้อง</b> ทุกคนใช้กระดานเดียวกัน ถ้าใครลบหรือเขียนเพิ่ม คนอื่นก็จะเห็นตามไปด้วย</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">10</span> Copy vs Shared object: ตัวอย่าง Append 99 <span class="chip w10">W10</span><span class="chip exam">★★★</span></h2>
+<div class="compare">
+  <div class="a"><span class="label">cache_data: callers receive copies</span>
+<script type="text/plain" class="code">
+@st.cache_data
+def create_list():
+    return [1, 2, 3]
+my_list = create_list()            ##! ได้ **สำเนา** [1, 2, 3]
+if st.button("Append 99"):
+    my_list.append(99)             ##! แก้แค่สำเนาของ user นี้ใน run นี้
+st.write("Current list:", my_list)
+</script>
+    <p>User A กด Append → เห็น <code>[1, 2, 3, 99]</code> ส่วน User B ยังเห็น <code>[1, 2, 3]</code> เพราะ<b>สำเนาแยกข้อมูลออกจากกัน (copies isolate data)</b></p></div>
+  <div class="a"><span class="label">cache_resource: callers share one object</span>
+<script type="text/plain" class="code">
+@st.cache_resource
+def create_list():
+    return [1, 2, 3]
+my_list = create_list()            ##! ได้ **object ตัวเดียวกัน** กับทุก user
+if st.button("Append 99"):
+    my_list.append(99)             ##! mutate shared object ส่งผลกับทุก session
+st.write("Current list:", my_list)
+</script>
+    <p>User A กด Append → object กลายเป็น <code>[1, 2, 3, 99]</code> <b>User B จะเห็น object ที่ถูกแก้แล้วใน rerun ครั้งถัดไป</b></p></div>
+</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> 2 Users: สำเนา (cache_data) vs object ร่วม (cache_resource)</div>
+  <div class="sim-body">
+    <p class="howto">เลือกโหมดก่อน แล้วให้ User A กด <b>Append 99</b> จากนั้นให้ User B กด <b>Rerun</b> ดูว่า B เห็นค่าอะไร ลองกด Append หลายครั้งด้วย</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="seg" id="cvMode"><button type="button" class="on" data-m="data">@st.cache_data</button><button type="button" data-m="resource">@st.cache_resource</button></div>
+      <button class="btn sm" id="cvReset" type="button">ล้าง cache (เริ่มใหม่)</button>
+    </div>
+    <div class="shared-obj" id="cvCached"></div>
+    <div class="two-user">
+      <div class="fake-app user-box"><div class="bar"><i></i><i></i><i></i><span>User A · Session 1</span></div><div class="content">
+        <div class="row"><button class="btn primary sm" data-u="A" data-a="append" type="button">Append 99</button><button class="btn sm" data-u="A" data-a="rerun" type="button">Rerun</button></div>
+        <div class="out" id="cvA" style="margin-top:8px"></div></div></div>
+      <div class="fake-app user-box"><div class="bar"><i></i><i></i><i></i><span>User B · Session 2</span></div><div class="content">
+        <div class="row"><button class="btn primary sm" data-u="B" data-a="append" type="button">Append 99</button><button class="btn sm" data-u="B" data-a="rerun" type="button">Rerun</button></div>
+        <div class="out" id="cvB" style="margin-top:8px"></div></div></div>
+    </div>
+    <div class="out small" id="cvNote" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<h3>Intentionally wrong design: shared mutable object จำทุกการเปลี่ยนแปลง</h3>
+<script type="text/plain" class="code" data-title="wrong_cache.py">
+@st.cache_resource
+def get_numbers():
+    return [1, 2, 3]
+numbers = get_numbers()      ##! run แรก (MISS): สร้าง [1, 2, 3] / run ถัดไป (HIT): ได้ object **ตัวเดิม** ที่ถูกแก้ไปแล้ว
+numbers.remove(1)            ##! run แรก: object กลายเป็น [2, 3] / run ถัดไป: ไม่มี 1 ให้ลบ → **ValueError**
+</script>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Shared mutation trace: กด Rerun แล้วดูว่าพังตอนไหน</div>
+  <div class="sim-body">
+    <div class="row" style="margin-bottom:10px">
+      <div class="seg" id="wcMode"><button type="button" class="on" data-m="resource">@st.cache_resource</button><button type="button" data-m="data">@st.cache_data</button></div>
+      <button class="btn primary" id="wcRun" type="button">Rerun</button>
+      <button class="btn sm" id="wcReset" type="button">เริ่มใหม่</button>
+    </div>
+    <div class="out log" id="wcLog"></div>
+  </div>
+</div>
+<div class="callout bad"><div class="callout-title">✗ บทเรียน</div>อย่า mutate object ที่ได้จาก <code>cache_resource</code> เพราะมันคือ<b>ของส่วนกลาง</b> ถ้าต้องการแก้ข้อมูลให้ใช้ <code>cache_data</code> (ได้สำเนา) หรือ copy ก่อนแก้ ใน Lab 11 <code>training.py</code> เขียนกำกับไว้เลยว่า <i>“The returned pipeline is shared: callers must only predict, never mutate it.”</i></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">11</span> Hashing inputs: parameter ต้อง hashable และการยกเว้นด้วย <code>_</code> <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<script type="text/plain" class="code" data-title="hashing.py">
+@st.cache_data
+def fetch_data(_db_connection, num_rows):    ##! `_db_connection` ขึ้นต้นด้วย `_` → Streamlit **ไม่นำมา hash** และไม่ใช้เป็นส่วนหนึ่งของ cache key
+    return _db_connection.fetch(num_rows)    ##! `num_rows` ไม่มี `_` → **เป็นส่วนหนึ่งของ cache key** ค่าต่างกันจึงได้ entry ต่างกัน
+</script>
+<div class="grid c2">
+  <div class="card"><span class="label">A · Why hash?</span>Streamlit ต้องมี <b>key ที่เสถียร</b> ไว้เทียบ call นี้กับ call ก่อนหน้า จึงแปลง (hash) argument เป็นค่าที่เปรียบเทียบได้</div>
+  <div class="card"><span class="label">B · Underscore escape hatch</span>ใส่ <code>_</code> นำหน้า parameter เมื่ออยากให้ Streamlit <b>ไม่สนใจ</b> parameter นั้น (เช่น object ที่ hash ไม่ได้ อย่าง connection)</div>
+</div>
+<div class="callout warn"><div class="callout-title">⚠ Key point</div><b>อย่า ignore parameter ที่การเปลี่ยนค่าของมันควรทำให้ผลลัพธ์เปลี่ยน</b> ไม่อย่างนั้นจะได้ผลเก่าที่ผิด (stale/wrong hit)</div>
+<div class="callout tip"><div class="callout-title">🛠 เชื่อมกับ Lab 10</div>ใน Lab 10 แปลง list ของข้อความเป็น <code>tuple(tickets_df["text"])</code> ก่อนส่งเข้า <code>train_classifier_cached(texts, labels)</code> เพราะ tuple เป็น<b>ข้อมูล immutable ที่ hash ได้</b> จึงใช้เป็นส่วนหนึ่งของ cache key ได้อย่างเสถียร</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">12</span> เลือก decorator: Data copied, Resources shared <span class="chip w10">W10</span><span class="chip exam">★★★</span></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Use case</th><th>Typical return value</th><th>Decorator</th></tr></thead>
+<tbody>
+<tr><td>Read CSV / Excel</td><td>DataFrame</td><td><code>st.cache_data</code></td></tr>
+<tr><td>Transform data</td><td>DataFrame, Series, array</td><td><code>st.cache_data</code></td></tr>
+<tr><td>Query API / API dictionary</td><td>dict, DataFrame, str</td><td><code>st.cache_data</code></td></tr>
+<tr><td>Load ML model</td><td>Pipeline, torch model</td><td><code>st.cache_resource</code></td></tr>
+<tr><td>Create DB connection</td><td>connection / engine</td><td><code>st.cache_resource</code></td></tr>
+</tbody></table></div>
+<div class="callout key"><div class="callout-title">💡 คำถามเดียวที่ใช้ตัดสิน</div><b>“ผู้เรียกควรได้ผลลัพธ์ที่แยกเป็นของตัวเอง (isolated result) หรือควรใช้ object เดียวร่วมกันโดยตั้งใจ?”</b><br>แยกของใครของมัน → <code>cache_data</code> · ใช้ร่วมกัน → <code>cache_resource</code></div>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> แยกให้ถูก: cache_data หรือ cache_resource?</div>
+  <div class="sim-body"><div id="sortDeco"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">13</span> Advanced usage: ความสด (staleness), ttl, max_entries <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<p>ถ้าแอปรันนานและ cache ฟังก์ชันไปเรื่อย ๆ อาจเจอ 2 ปัญหา</p>
+<ol>
+  <li><b>แอปใช้ memory จนหมด</b> เพราะ cache ใหญ่เกินไป → แก้ด้วย <code>max_entries</code></li>
+  <li><b>ข้อมูลใน cache เก่า (stale)</b> เช่น cache ข้อมูลเก่าจาก database ไว้ → แก้ด้วย <code>ttl</code></li>
+</ol>
+<div class="callout bad"><div class="callout-title">✗ Stale cache hit</div><code>data.csv</code> เปลี่ยนแล้ว แต่ function code เหมือนเดิมและ arguments เหมือนเดิม → <b>ยังเป็น CACHE HIT (stale)</b> → ได้ DataFrame เก่า เพราะ Streamlit ไม่รู้ว่าไฟล์เปลี่ยน มันดูแค่ code + args</div>
+
+<h3>ttl (time-to-live): กำหนดอายุของ entry</h3>
+<script type="text/plain" class="code" data-title="ttl.py">
+@st.cache_data(ttl=3600)            ##! 1 ชั่วโมง = 3600 วินาที (หน่วยเป็น **วินาที**) พอหมดอายุแล้ว การเรียกครั้งถัดไปจะรันใหม่และเก็บผลใหม่
+def get_api_data():
+    response = requests.get(API_URL)
+    return response.json()
+
+@st.cache_data(ttl=datetime.timedelta(hours=1))   ##! เขียนด้วย `timedelta` ก็ได้ ความหมายเท่ากัน
+def get_api_data2():
+    ...
+</script>
+<div class="flow"><div class="step"><b>Fresh</b>cache entry</div><div class="arrow">→</div><div class="step"><b>Time passes</b>TTL expires</div><div class="arrow">→</div><div class="step"><b>Next access</b>runs again</div><div class="arrow">→</div><div class="step"><b>New result</b>stored</div></div>
+
+<h3>max_entries: จำกัดจำนวน entry</h3>
+<script type="text/plain" class="code" data-title="max_entries.py">
+@st.cache_data(max_entries=1000)      ##! เก็บได้สูงสุด 1000 entries ถ้าเต็มแล้วมี entry ใหม่เข้ามา **entry ที่เก่าที่สุดจะถูกลบ**
+def get_large_array(seed):
+    np.random.seed(seed)
+    return np.random.rand(100000)     ##! แต่ละ seed = 1 entry (array 100,000 ค่า)
+</script>
+<div class="callout warn"><div class="callout-title">⚠ Key point</div><code>max_entries</code> จำกัด <b>“จำนวน” entry ไม่ใช่ขนาดเป็น byte</b> ขนาดของ object แต่ละตัวยังสำคัญอยู่ (1000 entries ที่ entry ละ 100,000 ค่าก็ยังใหญ่มาก)</div>
+
+<h3>show_spinner: บอกผู้ใช้ว่ากำลังทำอะไร</h3>
+<script type="text/plain" class="code" data-title="spinner.py">
+@st.cache_data(show_spinner=False)                      ##! ปิด spinner เพราะงานเร็วอยู่แล้ว
+def load_small_table():
+    return pd.read_csv("small.csv")
+
+@st.cache_data(show_spinner="Fetching data...")         ##! ข้อความ custom ใช้เมื่อ run แรกอาจนาน
+def fetch_data():
+    return requests.get(API_URL).json()
+
+@st.cache_resource(show_spinner="Loading model...", show_time=True)   ##! (ใช้ใน Lab) `show_time=True` แสดงเวลาที่ใช้คู่กับ spinner
+def load_model():
+    ...
+</script>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Default</span>Streamlit แสดง loading spinner ตอน cache miss</div>
+  <div class="card"><span class="label">B · Disable</span><code>show_spinner=False</code> เมื่องานเร็ว</div>
+  <div class="card"><span class="label">C · Explain</span>ใส่ข้อความ custom เมื่อ run แรกอาจนาน</div>
+</div>
+<p><b>Key point:</b> cache miss อาจยังช้าอยู่ จึงควรบอกผู้ใช้ว่ากำลังเกิดอะไรขึ้นระหว่าง run แรก</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">14</span> Clearing caches: 2 วิธีทำให้ข้อมูลสด <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<h3>วิธีที่ 1: Manual clear (freshness by explicit action)</h3>
+<script type="text/plain" class="code" data-title="clear.py">
+@st.cache_data
+def load_data(path):
+    return pd.read_csv(path)
+
+if st.button("Clear load_data cache"):
+    load_data.clear()                 ##! ล้าง entry ทั้งหมดของ **ฟังก์ชันนี้ฟังก์ชันเดียว**
+if st.button("Clear all data caches"):
+    st.cache_data.clear()             ##! ล้าง cache_data **ทุกฟังก์ชัน** (ส่วน `st.cache_resource.clear()` ล้าง resource cache ทั้งหมด)
+</script>
+<div class="table-wrap"><table>
+<thead><tr><th>คำสั่ง</th><th>ขอบเขต</th></tr></thead>
+<tbody>
+<tr><td><code>func.clear()</code></td><td>ลบ entry ของ decorated function ตัวเดียว</td></tr>
+<tr><td><code>st.cache_data.clear()</code></td><td>ลบ cache_data ทุกฟังก์ชัน</td></tr>
+<tr><td><code>st.cache_resource.clear()</code></td><td>ลบ cache_resource ทุกฟังก์ชัน</td></tr>
+</tbody></table></div>
+<p class="small muted">ในสไลด์ใช้ปุ่ม clear ในเดโม เพื่อให้นักศึกษาเห็น miss/hit ซ้ำได้ ส่วนใน Lab 12 ใช้ <code>run_query.clear()</code> + <code>st.rerun()</code> ทำปุ่ม “Refresh database data”</p>
+
+<h3>วิธีที่ 2: Version the input (freshness by source change)</h3>
+<script type="text/plain" class="code" data-title="mtime.py">
+@st.cache_data
+def load_data(path, file_mtime):         ##! `file_mtime` ไม่ได้ถูกใช้ใน body แต่เป็น **ส่วนหนึ่งของ cache key**
+    return pd.read_csv(path)
+
+path = "data.csv"
+mtime = os.path.getmtime(path)           ##! เวลาแก้ไขไฟล์ล่าสุด (modification time) ไฟล์เปลี่ยนเมื่อไหร่ค่านี้ก็เปลี่ยน
+df = load_data(path, mtime)              ##! mtime ใหม่ = argument ใหม่ → MISS → อ่านไฟล์ใหม่อัตโนมัติ
+</script>
+<div class="callout key"><div class="callout-title">💡 Key point</div><b>ถ้าแหล่งข้อมูลจริงเปลี่ยน ให้ทำให้การเปลี่ยนนั้น “มองเห็นได้” ใน function inputs</b></div>
+<div class="callout tip"><div class="callout-title">🔗 ใช้จริงใน Lab 13 (Week 13)</div>
+<script type="text/plain" class="code" data-title="Lab 13 · main.py">
+@st.cache_data(show_spinner=False)
+def read_csv_file(path_string, modified_ns):          ##! `modified_ns` จงใจใส่ไว้เป็นส่วนของ cache key แม้ไม่ได้อ่านใน body
+    return pd.read_csv(path_string, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+
+table = read_csv_file(str(path), path.stat().st_mtime_ns).copy()   ##! `st_mtime_ns` = mtime หน่วย nanosecond ถ้าครูแก้ CSV ก็จะได้ข้อมูลใหม่ทันที
+</script></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">15</span> ควร cache ไหม? Design test <span class="chip w10">W10</span><span class="chip exam">★★</span></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>ระดับ</th><th>กรณี</th></tr></thead>
+<tbody>
+<tr><td class="hit">GOOD</td><td>อ่านไฟล์ / database / API ที่แพง <b>โดยมีกฎเรื่องความสด</b> (ttl, clear, mtime)</td></tr>
+<tr><td class="hit">GOOD</td><td>การ transform แบบ deterministic ที่แพง และ input ซ้ำบ่อย</td></tr>
+<tr><td class="hit">GOOD</td><td>โหลด model ที่แพงสำหรับ fitted model ที่ใช้ซ้ำได้</td></tr>
+<tr><td style="color:var(--warn);font-weight:700">MAYBE</td><td>Prediction เมื่อ request ซ้ำกันจริงและการใช้ผลซ้ำยังถูกต้อง</td></tr>
+<tr><td class="miss">SKIP</td><td>เลขคณิตง่าย ๆ หรือการจัด format string ที่เร็ว</td></tr>
+<tr><td class="miss">SKIP</td><td>แทบทุก call มี input ไม่ซ้ำกัน (cache ไม่เคย hit แต่เปลือง memory)</td></tr>
+<tr><td class="miss">SKIP</td><td>Workflow state ที่เปลี่ยนได้และเฉพาะของแต่ละ user (→ ใช้ <b>Session State</b> Week 11)</td></tr>
+<tr><td class="miss">SKIP</td><td>งานที่มี side effect และต้องเกิดจริงทุกครั้ง เช่น ส่งอีเมล หรือเขียน database</td></tr>
+</tbody></table></div>
+<div class="callout exam"><div class="callout-title">★ ถามตัวเอง 2 ข้อ</div>1) <b>การใช้ซ้ำช่วยประหยัดงานได้จริงไหม?</b> (Does reuse save meaningful work?) 2) <b>การใช้ซ้ำยังให้ผลถูกต้องไหม?</b> (Would reuse still be correct?)</div>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> GOOD / MAYBE / SKIP</div>
+  <div class="sim-body"><div id="sortShould"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">16</span> Wrap-up: Rerun → Look up → Reuse หรือ Recompute <span class="chip w10">W10</span></h2>
+<ol class="steps">
+  <li>การโต้ตอบใน Streamlit <b>ยังทำให้ script rerun</b> ส่วน cache hit แค่<b>ข้าม body ของ cached function</b></li>
+  <li><code>cache_data</code> คืน <b>สำเนาแยก (isolated copies)</b> ส่วน <code>cache_resource</code> ใช้ <b>shared object</b> ซึ่งต้องปลอดภัย</li>
+  <li><b>Identity, freshness, capacity และ correctness</b> เป็นตัวตัดสินว่าการใช้ซ้ำเหมาะสมไหม</li>
+</ol>
+<div class="table-wrap"><table>
+<thead><tr><th>คำ</th><th>ความหมาย</th><th>เครื่องมือ</th></tr></thead>
+<tbody>
+<tr><td>Identity</td><td>call นี้คืองานเดียวกับที่เคยทำไหม</td><td>function + args + code, <code>_param</code></td></tr>
+<tr><td>Freshness</td><td>ข้อมูลยังไม่เก่า</td><td><code>ttl</code>, <code>.clear()</code>, mtime</td></tr>
+<tr><td>Capacity</td><td>memory ไม่ล้น</td><td><code>max_entries</code></td></tr>
+<tr><td>Correctness</td><td>ใช้ซ้ำแล้วยังถูก</td><td>เลือก data/resource ให้ถูก และไม่ mutate shared object</td></tr>
+</tbody></table></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">17</span> Lab 10: Caching + Local Models (โค้ดจริง) <span class="chip w10">W10</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>Lab 10 สร้าง <b>IT Helpdesk Ticket Classifier</b> ที่จำแนกข้อความแจ้งปัญหาเป็น 4 category ได้แก่ Account &amp; Access, Network, Software และ Hardware &amp; Peripherals แอปมี 3 section: (1) Train on the fly + cache (2) Load local tiny classifier (3) Compare with local MiniLM</p>
+
+<h3>17.1 สร้าง Pipeline (ยังไม่ train)</h3>
+<script type="text/plain" class="code" data-title="Lab 10 · build_tiny_pipeline()">
+def build_tiny_pipeline() -> Pipeline:
+    return Pipeline(                         ##! Pipeline = ต่อขั้นตอนหลายอันเป็นชุดเดียว **ยังไม่ได้ train** เพราะยังไม่มี `fit()`
+        steps=[
+            ("tfidf", TfidfVectorizer(       ##! Step 1: แปลงข้อความเป็น numerical features (TF-IDF)
+                lowercase=True,              ##! แปลงเป็นตัวพิมพ์เล็กก่อน
+                ngram_range=(1, 2),          ##! ใช้ทั้งคำเดี่ยว และคำ 2 คำติดกัน เช่น "cannot", "connect", "cannot connect"
+                min_df=1,                    ##! ยอมให้ใช้คำที่พบอย่างน้อย 1 ตัวอย่าง
+            )),
+            ("classifier", LogisticRegression(   ##! Step 2: เรียนรู้ความสัมพันธ์ระหว่าง features กับ category
+                max_iter=1000,               ##! ให้ปรับ model ได้สูงสุด 1000 รอบ
+                random_state=42,             ##! ทำให้การทดลองได้ผลเดิมซ้ำได้ (reproducible)
+            )),
+        ]
+    )
+</script>
+
+<h3>17.2 โหลดข้อมูล: uncached vs cache_data</h3>
+<script type="text/plain" class="code" data-title="Lab 10 · data loading">
+def load_data_uncached(file_path: str) -> pd.DataFrame:
+    time.sleep(1)                            ##! จำลองความช้า ไม่มี cache จึงช้า 1 วินาทีทุก rerun
+    return pd.read_csv(file_path)
+
+@st.cache_data(                              ##! DataFrame = **data** จึงใช้ `cache_data` (ผู้เรียกได้สำเนา)
+    show_spinner="Loading and caching the training data...",
+    show_time=True,
+)
+def load_data_cached(file_path: str) -> pd.DataFrame:
+    time.sleep(1)
+    return pd.read_csv(file_path)
+
+start = time.perf_counter()                  ##! จับเวลาแบบละเอียด
+tickets_df = load_data_cached(str(DATA_PATH))   ##! ส่ง path เป็น `str` (hash ง่ายและเสถียร)
+elapsed = time.perf_counter() - start
+st.metric("Data loading time", f"{elapsed:.3f} seconds")   ##! MISS ≈ 1 วินาที / HIT ≈ 0.00x วินาที
+</script>
+
+<h3>17.3 Train แล้ว cache model ด้วย cache_resource</h3>
+<script type="text/plain" class="code" data-title="Lab 10 · train_classifier_cached()">
+@st.cache_resource(                          ##! fitted model = **resource** ใช้ object เดียวร่วมกัน ไม่ต้อง copy
+    show_spinner="Training and caching the tiny classifier...",
+    show_time=True,
+)
+def train_classifier_cached(
+    texts: tuple[str, ...],                  ##! รับ **tuple** ไม่ใช่ list เพราะ tuple เป็น immutable และ hashable ใช้เป็น cache key ได้
+    labels: tuple[str, ...],
+) -> Pipeline:
+    time.sleep(2)
+    model = build_tiny_pipeline()
+    model.fit(list(texts), list(labels))     ##! train จริง (แปลงกลับเป็น list ตอนส่งให้ scikit-learn)
+    return model
+
+texts = tuple(tickets_df["text"])            ##! แปลงคอลัมน์ DataFrame เป็น tuple ก่อนส่งเข้า cached function
+labels = tuple(tickets_df["category"])
+model = train_classifier_cached(texts, labels)   ##! ข้อมูลเดิม → HIT → ไม่ต้อง train ใหม่
+
+prediction = model.predict([ticket_text.strip()])[0]          ##! `predict` รับ list ของข้อความ คืน array ของ category จึงเอา `[0]`
+probabilities = model.predict_proba([ticket_text.strip()])[0] ##! ความน่าจะเป็นของแต่ละ class (เรียงตาม `model.classes_`)
+</script>
+
+<h3>17.4 Export ทั้ง Pipeline + metadata</h3>
+<script type="text/plain" class="code" data-title="Lab 10 · Save local classifier">
+if st.button("Save local classifier", type="primary"):      ##! เขียนไฟล์เฉพาะตอนกดปุ่ม (side effect ไม่ควร cache)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, TINY_MODEL_PATH)                     ##! บันทึก fitted Pipeline **ทั้งชุด** (TF-IDF vocabulary + LogisticRegression) เป็น .joblib
+    digest = hashlib.sha256(TINY_MODEL_PATH.read_bytes()).hexdigest()   ##! SHA-256 ไว้ตรวจความถูกต้องของไฟล์ (integrity) แต่**ไม่ได้ทำให้ไฟล์ที่ไม่ปลอดภัยกลายเป็นปลอดภัย**
+    metadata = {
+        "model_name": "Tiny IT Helpdesk Ticket Classifier",
+        "algorithm": "TF-IDF (1-2 grams) + Logistic Regression",
+        "classes": sorted(tickets_df["category"].unique()),
+        "sha256": digest,
+        "intended_use": "Instructional use only",
+    }
+    TINY_METADATA_PATH.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+</script>
+<p>ทำไมต้อง save <b>ทั้ง Pipeline</b>? เพราะ model ใน memory จะหายเมื่อหยุด Streamlit และการ save ทั้งชุดทำให้ตอน inference ใช้ <b>text preprocessing (vocabulary ของ TF-IDF) ชุดเดียวกับตอน train</b></p>
+
+<h3>17.5 โหลด model ในเครื่อง + MiniLM + Semantic search</h3>
+<script type="text/plain" class="code" data-title="Lab 10 · local models">
+@st.cache_resource(show_spinner="Loading the local tiny classifier...", show_time=True)
+def load_local_classifier(model_path: str) -> Pipeline:
+    return joblib.load(model_path)            ##! โหลด model จากไฟล์ = resource
+
+@st.cache_data
+def load_json(file_path: str) -> dict:
+    return json.loads(Path(file_path).read_text(encoding="utf-8"))   ##! metadata เป็น dict = data
+
+@st.cache_resource(show_spinner="Loading all-MiniLM-L6-v2 from the local folder...", show_time=True)
+def load_embedding_model(model_path: str):
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(model_path, local_files_only=True)   ##! โหลด MiniLM จากโฟลเดอร์ในเครื่อง ไม่ต้องดาวน์โหลดหรือเรียก API
+
+@st.cache_data(show_spinner="Creating ticket embeddings...", show_time=True)
+def create_corpus_embeddings(ticket_texts: tuple[str, ...], model_path: str) -> np.ndarray:
+    model = load_embedding_model(model_path)  ##! เรียก cached resource อีกตัวข้างใน (HIT)
+    return model.encode(list(ticket_texts),
+                        normalize_embeddings=True,   ##! ทำให้ทุก vector ยาวเท่ากับ 1
+                        show_progress_bar=False)     ##! ผลเป็น ndarray (ticket × 384) = **data** จึงใช้ `cache_data`
+
+def semantic_search(model, corpus_embeddings, tickets_df, query, top_k=3):
+    query_embedding = model.encode([query], normalize_embeddings=True, show_progress_bar=False)
+    similarities = query_embedding[0] @ corpus_embeddings.T   ##! `@` = dot product และเพราะ normalize แล้ว **dot product = cosine similarity**
+    top_indices = np.argsort(similarities)[::-1][:top_k]      ##! argsort เรียงน้อย→มาก, `[::-1]` กลับเป็นมาก→น้อย, `[:top_k]` เอา top 3
+    matches = tickets_df.iloc[top_indices].copy()
+    matches["Similarity"] = similarities[top_indices]
+    return matches[["text", "category", "Similarity"]].reset_index(drop=True)   ##! category ของ ticket ที่ใกล้ที่สุดใช้เป็นคำทำนาย
+</script>
+<p><b>all-MiniLM-L6-v2</b> คือ sentence-embedding model ที่แปลงข้อความเป็น <b>vector 384 มิติ</b> ข้อความที่ความหมายใกล้กันจะได้ vector ใกล้กัน แม้จะใช้คำต่างกัน (paraphrase) แนวทางนี้เรียกว่า <b>retrieval-based classification</b>: embed tickets ทั้งหมด → embed query → คำนวณ similarity → เลือก top-K → ใช้ category ของอันที่ใกล้ที่สุด</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>ประเด็น</th><th>Tiny classifier</th><th>all-MiniLM-L6-v2 approach</th></tr></thead>
+<tbody>
+<tr><td>แหล่งความรู้</td><td>Train จาก labelled dataset ของ Lab</td><td>Pretrained sentence representation</td></tr>
+<tr><td>ต้อง train เพิ่ม</td><td>ต้อง train</td><td>ไม่ train เพิ่ม</td></tr>
+<tr><td>Feature</td><td>TF-IDF</td><td>384-dimensional embeddings</td></tr>
+<tr><td>Output ของ model</td><td>Class probability</td><td>Embedding vector</td></tr>
+<tr><td>วิธีได้ category</td><td>Logistic Regression</td><td>Label ของ similar ticket</td></tr>
+<tr><td>Cache ที่สำคัญ</td><td>Fitted Pipeline (resource)</td><td>Model resource + Corpus embeddings (data)</td></tr>
+<tr><td>จุดแข็ง</td><td>เล็ก เร็ว ตรงกับ task</td><td>เข้าใจ paraphrase ได้ดีขึ้นในหลายกรณี</td></tr>
+<tr><td>ข้อจำกัด</td><td>พึ่ง vocabulary ของ dataset</td><td>Similarity ≠ class probability และไม่ได้ออกแบบมาสำหรับ multilingual โดยเฉพาะ</td></tr>
+</tbody></table></div>
+<div class="callout warn"><div class="callout-title">⚠ อย่าเทียบตัวเลขผิดประเภท</div><b>Classifier probability</b> (เช่น 85%) กับ <b>cosine similarity</b> (เช่น 0.62) <b>ไม่ใช่สเกลเดียวกัน</b> เอามาเทียบตรง ๆ ไม่ได้ว่าอันไหน “มั่นใจกว่า”</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">✎</span> แบบฝึกหัดท้ายบท Week 10 <span class="chip w10">W10</span></h2>
+<p class="muted">ข้อกาตรวจทันทีพร้อมเหตุผล ส่วนข้อเขียนให้ลองตอบก่อนแล้วค่อยกด “ดูแนวคำตอบ”</p>
+<div class="quiz-mount" data-week="w10"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปจากสไลด์และ Lab ของวิชา 06016474 Applied AI for IT · Week 10</footer>
+
+<script src="assets/q-w10.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, renderCode, sortGame, esc } = AAIT;
+
+  /* ---------- (1) cache simulator ---------- */
+  const cache = new Map(); // key -> { x, result, t }
+  let ver = 1, runNo = 0, busy = false, block;
+  const codeFor = () => {
+    const opts = [];
+    if ($("#csTtl").value) opts.push(`ttl=${$("#csTtl").value}`);
+    if ($("#csMax").value) opts.push(`max_entries=${$("#csMax").value}`);
+    const deco = opts.length ? `@st.cache_data(${opts.join(", ")})` : "@st.cache_data";
+    return `import streamlit as st
+import time
+st.title("Cache demo")
+x = st.number_input("x", value=5)
+${deco}
+def slow_square(x):
+    time.sleep(3)${ver > 1 ? "  # edited v" + ver : ""}
+    return x * x
+result = slow_square(x)
+st.write("Result:", result)`;
+  };
+  function drawCode() { $("#csCode").innerHTML = ""; block = renderCode(codeFor(), { title: "app.py" }); $("#csCode").appendChild(block.el); }
+  const fast = () => $("#csFast").checked;
+  const wait = (ms) => new Promise((r) => setTimeout(r, fast() ? 0 : ms));
+  const log = (html) => { const d = document.createElement("div"); d.innerHTML = html; $("#csLog").prepend(d); };
+  function expire() {
+    const ttl = +$("#csTtl").value;
+    if (!ttl) return;
+    const now = Date.now();
+    for (const [k, e] of cache) if (now - e.t > ttl * 1000) { cache.delete(k); log(`⌛ entry <code>${esc(k)}</code> หมดอายุ (ttl=${ttl}s) จึงถูกลบ`); }
+  }
+  function drawTable(newKey) {
+    expire();
+    const ttl = +$("#csTtl").value;
+    const tb = $("#csTable");
+    if (!cache.size) { tb.innerHTML = `<tr><td colspan="3" class="muted">ว่าง</td></tr>`; return; }
+    tb.innerHTML = [...cache.entries()].map(([k, e]) => {
+      const age = Math.floor((Date.now() - e.t) / 1000);
+      const left = ttl ? `<span class="exp"> · เหลือ ${Math.max(0, ttl - age)}s</span>` : "";
+      return `<tr class="${k === newKey ? "new" : ""}"><td><code>${esc(k)}</code></td><td>${e.result}</td><td>${age}s${left}</td></tr>`;
+    }).join("");
+  }
+  setInterval(() => { if (cache.size) drawTable(); }, 1000);
+  async function run() {
+    if (busy) return; busy = true;
+    runNo++;
+    const x = Number($("#csX").value) || 0;
+    const key = `slow_square(${x})`;
+    const step = async (lines, ms) => { block.setHighlight(lines); await wait(ms || 200); };
+    await step([1]); await step([2]); await step([3]); await step([4]);
+    await step([9], 250);
+    expire();
+    if (cache.has(key)) {
+      block.setHighlight([9], "hl-run");
+      $("#csOut").innerHTML = `Result: ${cache.get(key).result}`;
+      log(`Rerun #${runNo}: <span class="hit">HIT</span> <code>${esc(key)}</code> → คืน ${cache.get(key).result} ทันที (ข้ามบรรทัด 6–8)`);
+      await wait(300);
+    } else {
+      await step([6], 200);
+      block.setHighlight([7]);
+      $("#csOut").innerHTML = `<span class="spinner"></span> Running slow_square(${x})...`;
+      await wait(1200);
+      await step([8], 200);
+      const result = x * x;
+      cache.set(key, { x, result, t: Date.now() });
+      const max = +$("#csMax").value;
+      if (max && cache.size > max) {
+        const oldest = [...cache.entries()].sort((a, b) => a[1].t - b[1].t)[0][0];
+        cache.delete(oldest);
+        log(`🗑 max_entries=${max} เต็ม → ลบ entry เก่าที่สุด <code>${esc(oldest)}</code>`);
+      }
+      $("#csOut").innerHTML = `Result: ${result}`;
+      log(`Rerun #${runNo}: <span class="miss">MISS</span> <code>${esc(key)}</code> → รัน body (sleep) แล้วเก็บ ${result}`);
+      drawTable(key);
+    }
+    await step([10], 250);
+    block.setHighlight([]);
+    drawTable();
+    busy = false;
+  }
+  $("#csRun").addEventListener("click", run);
+  $("#csX").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  $("#csClear").addEventListener("click", () => { cache.clear(); drawTable(); log(`🧹 <code>slow_square.clear()</code> → ลบทุก entry ของฟังก์ชันนี้`); });
+  $("#csEdit").addEventListener("click", () => { ver++; $("#csVer").textContent = ver; cache.clear(); drawCode(); drawTable(); log(`✎ แก้ source code (v${ver}) → cache identity เปลี่ยน entry เดิมใช้ไม่ได้ทั้งหมด call ถัดไปจะ MISS`); });
+  ["#csTtl", "#csMax"].forEach((s) => $(s).addEventListener("change", () => { drawCode(); drawTable(); }));
+  drawCode(); drawTable();
+  log("เริ่มต้น: cache ว่าง ลองกด Rerun ด้วย x = 5 สองครั้ง");
+
+  /* ---------- (2) copy vs shared ---------- */
+  let cvMode = "data", master = null;
+  const view = { A: null, B: null };
+  const repr = (l) => "[" + l.join(", ") + "]";
+  function cvGet() { // create_list() call
+    let hit = master !== null;
+    if (!hit) master = [1, 2, 3];
+    return { list: cvMode === "data" ? master.slice() : master, hit };
+  }
+  function cvDraw(note) {
+    $("#cvCached").className = "shared-obj" + (cvMode === "resource" ? " res" : "");
+    $("#cvCached").innerHTML = master === null ? `<span class="muted">cache ยังว่าง (ยังไม่มีใครเรียก create_list)</span>` :
+      `<span class="label">${cvMode === "data" ? "ค่าที่ serialize เก็บใน cache_data (ต้นฉบับ)" : "object ตัวเดียวใน cache_resource (ทุกคนชี้มาที่นี่)"}</span><b class="mono">${repr(master)}</b>`;
+    ["A", "B"].forEach((u) => { $("#cv" + u).textContent = view[u] ? "Current list: " + repr(view[u]) : "(ยังไม่ได้รัน)"; });
+    if (note) $("#cvNote").innerHTML = note;
+  }
+  function cvRun(u, append) {
+    const { list, hit } = cvGet();
+    if (append) list.push(99);
+    view[u] = list.slice();
+    let note = `User ${u}: create_list() → ${hit ? '<span class="hit">HIT</span>' : '<span class="miss">MISS</span>'} `;
+    if (cvMode === "data") note += `ได้<b>สำเนา</b> ${append ? "แล้ว append 99 ลงสำเนา (ต้นฉบับใน cache ไม่เปลี่ยน รอบหน้าก็ได้ [1, 2, 3] ใหม่)" : ""}`;
+    else note += `ได้ <b>object ตัวเดียวกับทุกคน</b> ${append ? "แล้ว append 99 → object ส่วนกลางถูกแก้ อีก user จะเห็นใน rerun ถัดไป" : ""}`;
+    cvDraw(note);
+  }
+  $(".two-user").addEventListener("click", (e) => { const b = e.target.closest("button[data-u]"); if (b) cvRun(b.dataset.u, b.dataset.a === "append"); });
+  $("#cvMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    cvMode = b.dataset.m; master = null; view.A = view.B = null;
+    $("#cvMode").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    cvDraw(`เปลี่ยนเป็น <code>@st.${cvMode === "data" ? "cache_data" : "cache_resource"}</code> แล้ว cache เริ่มใหม่`);
+  });
+  $("#cvReset").addEventListener("click", () => { master = null; view.A = view.B = null; cvDraw("ล้าง cache แล้ว"); });
+  cvDraw("ลองให้ User A กด Append 99 แล้ว User B กด Rerun");
+
+  /* ---------- (3) wrong cache remove(1) ---------- */
+  let wcMode = "resource", wcObj = null, wcRun = 0;
+  const wcLog = (h) => { const d = document.createElement("div"); d.innerHTML = h; $("#wcLog").prepend(d); };
+  $("#wcRun").addEventListener("click", () => {
+    wcRun++;
+    const hit = wcObj !== null;
+    if (!hit) wcObj = [1, 2, 3];
+    const numbers = wcMode === "resource" ? wcObj : wcObj.slice();
+    const before = repr(numbers);
+    const i = numbers.indexOf(1);
+    if (i < 0) {
+      wcLog(`Run #${wcRun}: get_numbers() ${hit ? '<span class="hit">HIT</span>' : '<span class="miss">MISS</span>'} → numbers = ${before} → numbers.remove(1) → <span class="err"><b>ValueError: list.remove(x): x not in list</b></span> (สไลด์: “1 is not in list”)`);
+    } else {
+      numbers.splice(i, 1);
+      wcLog(`Run #${wcRun}: get_numbers() ${hit ? '<span class="hit">HIT</span>' : '<span class="miss">MISS</span>'} → numbers = ${before} → remove(1) → ${repr(numbers)} ${wcMode === "resource" ? "(object ใน cache ถูกแก้ไปด้วย!)" : "(แก้แค่สำเนา ต้นฉบับยังเป็น [1, 2, 3])"}`);
+    }
+  });
+  $("#wcReset").addEventListener("click", () => { wcObj = null; wcRun = 0; $("#wcLog").innerHTML = ""; });
+  $("#wcMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    wcMode = b.dataset.m; wcObj = null; wcRun = 0; $("#wcLog").innerHTML = "";
+    $("#wcMode").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    wcLog(`โหมด <code>@st.${wcMode === "data" ? "cache_data" : "cache_resource"}</code> กด Rerun หลาย ๆ ครั้ง`);
+  });
+  wcLog("กด Rerun 2 ครั้งแล้วดูผล");
+
+  /* ---------- (4) which decorator ---------- */
+  sortGame($("#sortDeco"), {
+    options: ["cache_data", "cache_resource"],
+    items: [
+      { text: "<code>pd.read_csv(\"tickets.csv\")</code> คืน DataFrame", answer: 0, why: "DataFrame เป็น data ควรให้แต่ละผู้เรียกได้สำเนาของตัวเอง" },
+      { text: "<code>pipeline(\"sentiment-analysis\")</code> โหลด ML model", answer: 1, why: "model เป็น resource ขนาดใหญ่ ควรมีตัวเดียวใช้ร่วมกัน" },
+      { text: "<code>requests.get(API_URL).json()</code> คืน dict", answer: 0, why: "ผลจาก API (dict/str) คือ data" },
+      { text: "<code>create_client(url, key)</code> สร้าง Supabase client (Lab 12)", answer: 1, why: "database connection/client เป็น shared resource ไม่ควรสร้างใหม่ทุก rerun" },
+      { text: "<code>SentenceTransformer(model_path)</code> โหลด MiniLM", answer: 1, why: "embedding model = resource" },
+      { text: "<code>model.encode(texts)</code> สร้าง corpus embeddings (ndarray)", answer: 0, why: "array ของตัวเลขเป็นผลลัพธ์การคำนวณ = data (Lab 10 ใช้ cache_data)" },
+      { text: "<code>df.groupby(...).sum()</code> transform ข้อมูล", answer: 0, why: "transform data คืน DataFrame/Series = data" },
+      { text: "<code>LogisticRegression().fit(X, y)</code> คืน fitted model", answer: 1, why: "fitted model ใช้ร่วมกันได้และไม่ควร copy (Lab 10/11 ใช้ cache_resource)" },
+    ],
+  });
+
+  /* ---------- (5) should this be cached ---------- */
+  sortGame($("#sortShould"), {
+    options: ["GOOD", "MAYBE", "SKIP"],
+    items: [
+      { text: "อ่าน CSV ขนาด 500MB โดยมี ttl=600", answer: 0, why: "expensive read + มีกฎความสด" },
+      { text: "โหลด fitted model ที่ใช้ซ้ำทุก request", answer: 0, why: "expensive model loading for a reusable fitted model" },
+      { text: "<code>a + b</code> หรือ <code>f\"Hello {name}\"</code>", answer: 2, why: "งานเร็วมาก cache แล้วไม่คุ้ม" },
+      { text: "Prediction ของข้อความเดิมที่ผู้ใช้ถามซ้ำบ่อย", answer: 1, why: "MAYBE: คุ้มเมื่อ request ซ้ำจริงและผลเดิมยังถูก" },
+      { text: "Chat history ของผู้ใช้แต่ละคน", answer: 2, why: "user-specific mutable workflow state → ใช้ Session State (W11)" },
+      { text: "ส่งอีเมลแจ้งเตือนเมื่อกดปุ่ม", answer: 2, why: "มี side effect และต้องเกิดจริงทุกครั้ง ถ้า cache จะไม่ส่งซ้ำ" },
+      { text: "ฟังก์ชันที่แทบทุก call มี input ไม่ซ้ำ (เช่น timestamp)", answer: 2, why: "ไม่เคย hit แต่เปลือง memory" },
+      { text: "Transform ข้อมูลแบบ deterministic ที่ใช้เวลานาน และ input ซ้ำบ่อย", answer: 0, why: "costly deterministic transformation with repeated inputs" },
+    ],
+  });
+});
+</script>
+</body>
+</html>

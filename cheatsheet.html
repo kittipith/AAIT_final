@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สรุปย่อก่อนสอบ</title>
+<meta name="description" content="Cheat sheet Week 9–13 แยกตามสัปดาห์ พร้อมตารางเปรียบเทียบและอภิธานศัพท์">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .cs-week { border-left: 4px solid var(--c); padding-left: 14px; margin: 26px 0; }
+  .cs-week > h3 { margin-top: 0; color: var(--c); }
+  .cs-list { margin: 0; padding-left: 20px; }
+  .cs-list li { margin: 5px 0; }
+  .hidden-by-filter { display: none !important; }
+  .filter-btn.on { background: var(--wk); color: #fff; border-color: var(--wk); }
+  tr.cs-item td:first-child { white-space: nowrap; }
+</style>
+</head>
+<body data-page="cheat">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">สรุปย่อ · อ่านก่อนเข้าห้องสอบ</span>
+  <h1>Cheat Sheet Week 9 – 13</h1>
+  <p class="lead">รวมสิ่งที่ต้องจำแบบกระชับ ทุกบรรทัดติดป้ายว่าอยู่สัปดาห์ไหน ใช้ตัวกรองเพื่อดูทีละสัปดาห์ หรือพิมพ์ค้นหาคำได้เลย</p>
+</section>
+
+<div class="card" style="position:sticky;top:70px;z-index:5">
+  <div class="filterbar" style="margin:0">
+    <button class="btn sm filter-btn on" data-f="all" type="button">ทุกสัปดาห์</button>
+    <button class="btn sm filter-btn" data-f="w9" type="button">W9</button>
+    <button class="btn sm filter-btn" data-f="w10" type="button">W10</button>
+    <button class="btn sm filter-btn" data-f="w11" type="button">W11</button>
+    <button class="btn sm filter-btn" data-f="w12" type="button">W12</button>
+    <button class="btn sm filter-btn" data-f="w13" type="button">W13</button>
+    <input type="text" id="csSearch" placeholder="ค้นหา เช่น ttl, key, secrets, rerun ...">
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="no-track">1. สรุปแก่นของแต่ละสัปดาห์</h2>
+
+<div class="cs-week cs-item" data-week="w9" style="--c:var(--w9)">
+<h3>Week 9 · Streamlit Fundamentals</h3>
+<ul class="cs-list">
+<li>Streamlit = เปลี่ยน <b>Python script → interactive web app</b> โดยไม่ต้องเขียน frontend (HTML/CSS/JS) แยก</li>
+<li><code>python main.py</code> = process ธรรมดา ส่วน <code>streamlit run main.py</code> = เปิด <b>long-lived server</b> ที่รอการโต้ตอบ</li>
+<li>ลำดับ: command → server starts → main.py runs on server (แปล <code>st.*</code> เป็น UI) → browser renders UI</li>
+<li><b>Python runs on the server, not in the browser</b> ซึ่งกระทบ 4 ด้าน: security (secret key), performance (model memory), files (path = file system ของ server) และ debugging</li>
+<li>Local = เครื่องเดียวแต่ยังมี 2 บทบาท ส่วน Deployed = คนละเครื่องเชื่อมผ่าน network ถ้าต้องการไฟล์ของผู้ใช้ให้รับผ่าน <code>file_uploader</code></li>
+<li>Browser ↔ server คุยผ่าน <b>WebSocket แบบ persistent</b> โดย <b>1 แท็บ = 1 session</b> และ server app ใช้ร่วมกัน แต่ค่า widget แยกกัน</li>
+<li><b>Rerun</b>: เปลี่ยน widget (นอก form) → ส่งค่า → script รัน<b>บนลงล่างทั้งไฟล์</b> → แสดงผลใหม่</li>
+<li>Consequence 1: งานหนักถูกทำซ้ำ → <b>Caching (W10)</b> · Consequence 2: ตัวแปรธรรมดาหาย → <b>Session State (W11)</b></li>
+<li><code>st.dataframe</code> interactive · <code>st.table</code> static · <code>st.write</code> auto · <code>st.data_editor</code> คืน DataFrame ที่แก้แล้ว (<b>ไม่ save ลง CSV</b>) · <code>st.metric</code> KPI + delta</li>
+<li>Widget return = Python value ธรรมดา โดย <code>button</code> True เฉพาะรอบที่กด, <code>multiselect</code> คืน list, <code>slider</code> คืนตัวเลขหรือ tuple</li>
+<li>เลือกไม่ครบให้ใช้ <code>st.warning</code> (ไม่ใช่ error) และตั้ง label ดี ๆ จะได้ไม่ต้องอธิบายเยอะ</li>
+<li><b>Form</b>: ค่าถูกเก็บแล้วส่งพร้อมกันเมื่อกด <code>form_submit_button</code> (ต้องมีเสมอ) ระหว่างกรอกจึงไม่ rerun</li>
+<li>Layout: Sidebar = global controls · Columns = metrics เคียงกัน · Tabs = มุมมอง · Expander = รายละเอียด · Container = จัดกลุ่ม</li>
+<li>Dashboard rhythm: <b>controls → key metrics → main views → optional details</b></li>
+</ul></div>
+
+<div class="cs-week cs-item" data-week="w10" style="--c:var(--w10)">
+<h3>Week 10 · Caching</h3>
+<ul class="cs-list">
+<li>Cache งานที่ <b>แพง + เสถียรพอจะใช้ซ้ำข้าม rerun</b> เช่น อ่านไฟล์ใหญ่, เรียก API/DB, โหลด model/tokenizer/embeddings</li>
+<li><b>HIT</b> = มี entry ที่ตรงกันและยังใช้ได้ จึงคืนค่าเดิมโดย<b>ไม่รัน function body</b> · <b>MISS</b> = รัน function แล้วเก็บผล</li>
+<li><b>Cache ข้ามแค่ function body ไม่ได้ข้าม rerun</b> ส่วนอื่นของ script ยังรันบนลงล่างตามปกติ</li>
+<li>Cache identity = <b>ฟังก์ชันเดิม + arguments เดิม + source code เดิม</b> ถ้าเปลี่ยนอย่างใดอย่างหนึ่งจะ MISS และสร้าง entry ใหม่ (1 ฟังก์ชันมีได้หลาย entry)</li>
+<li><code>@st.cache_data</code> ใช้กับ <b>data</b> (DataFrame, list, dict, str, ผลจาก API) โดย serialize เก็บไว้แล้ว<b>คืนสำเนา (copy)</b> ให้ผู้เรียกแต่ละคน</li>
+<li><code>@st.cache_resource</code> ใช้กับ <b>shared resource</b> (ML model, DB connection) โดย<b>คืน object ตัวเดียวกัน</b> ไม่ copy จึงต้อง thread-safe และห้าม mutate</li>
+<li>ถ้า mutate object จาก cache_resource ทุก session จะเห็นการเปลี่ยนแปลง เช่น ตัวอย่าง <code>remove(1)</code> ที่ทำให้รอบถัดไปเกิด <b>ValueError</b></li>
+<li>Arguments ต้อง <b>hashable</b> (Lab แปลง list เป็น <code>tuple</code>) ถ้าใส่ <code>_</code> นำหน้า parameter (เช่น <code>_db_connection</code>) Streamlit จะไม่นำมาคิด cache key</li>
+<li><code>ttl=3600</code> (หรือ <code>timedelta</code>) ใช้กันข้อมูล stale · <code>max_entries=1000</code> จำกัด<b>จำนวน</b> entry (ลบอันเก่าสุดออก) ไม่ได้จำกัดขนาด byte</li>
+<li><code>show_spinner=False</code> หรือข้อความเอง และ Lab ใช้ <code>show_time=True</code> แสดงเวลาที่ใช้</li>
+<li>เคลียร์: <code>func.clear()</code> (ฟังก์ชันเดียว) · <code>st.cache_data.clear()</code> / <code>st.cache_resource.clear()</code> (ทั้งประเภท)</li>
+<li>Version the input: ส่ง <code>os.path.getmtime(path)</code> เป็น argument พอไฟล์เปลี่ยน key ก็เปลี่ยน แล้ว refresh เอง</li>
+<li>คำถามก่อนตัดสินใจ cache: <b>ใช้ซ้ำแล้วประหยัดงานจริงไหม?</b> และ <b>ใช้ซ้ำแล้วยังถูกต้องไหม?</b> (SKIP: งานเล็ก, input ไม่ซ้ำ, state ของผู้ใช้, side effect)</li>
+</ul></div>
+
+<div class="cs-week cs-item" data-week="w11" style="--c:var(--w11)">
+<h3>Week 11 · Session State</h3>
+<ul class="cs-list">
+<li>Session = การเชื่อมต่อระหว่าง <b>1 แท็บ</b> กับแอป และ <code>st.session_state</code> เก็บ key–value ที่<b>อยู่รอดข้าม rerun ภายใน session นั้น</b></li>
+<li>Session State = <b>“my current workflow”</b> (ของ session เดียว, หายเมื่อ session จบ) · Cache = <b>“expensive work we can reuse”</b> (แชร์ทุก session)</li>
+<li>Init pattern: <code>if "count" not in st.session_state: st.session_state.count = 0</code> เพื่อไม่ให้ reset ทุก rerun</li>
+<li>ใช้ได้ทั้ง <code>st.session_state["k"]</code> และ <code>st.session_state.k</code> ลบด้วย <code>del st.session_state["k"]</code> ถ้าจะลบทุก key ให้วน <code>list(st.session_state.keys())</code></li>
+<li>Widget ที่มี <code>key="name"</code> จะ<b>เขียนค่าลง</b> <code>st.session_state["name"]</code> อัตโนมัติ (key ต้องไม่ซ้ำ)</li>
+<li>ถ้าจะตั้งค่าเริ่มต้นให้ keyed widget ให้ <b>set state ก่อนสร้าง widget</b> ถ้า set หลังจะเกิด <code>StreamlitAPIException</code></li>
+<li>Callback: ผู้ใช้เปลี่ยน widget → <b>callback รันก่อน</b> → state update → <b>script rerun</b></li>
+<li><code>on_click=f</code> คือ<b>ส่งฟังก์ชัน</b> (ถูก) ส่วน <code>on_click=f()</code> คือ<b>เรียกทันทีทุก rerun</b> (ผิด)</li>
+<li><code>on_change</code> ใช้กับ input widget และส่งค่าคงที่ด้วย <code>args</code>/<code>kwargs</code> ได้ ถ้าเป็น form ให้ใส่ callback ที่ <b>submit button</b></li>
+<li>Common errors: (1) อ่าน key ก่อน init (2) แก้ค่า widget หลังสร้าง (3) ตั้ง default ซ้อนสองที่ (state + <code>value=</code>)</li>
+<li><b>Button state ephemeral</b>: ห้ามบังคับ state ของปุ่ม ให้<b>เก็บผลลัพธ์</b>แทน เช่น <code>submitted = True</code></li>
+<li>State หายเมื่อเปิดแท็บใหม่ / reload / connection reset จึงเป็น temporary memory <b>ไม่ใช่ database</b></li>
+<li>ถามตัวเอง: <b>ใครควรเห็น?</b> (session เดียว → state, ทุกคน → cache/storage) และ <b>อยู่นานแค่ไหน?</b> (ถึงปิดแท็บ → state, ข้ามการเข้าใช้ → file/DB)</li>
+</ul></div>
+
+<div class="cs-week cs-item" data-week="w12" style="--c:var(--w12)">
+<h3>Week 12 · Lab 12 Database (Supabase)</h3>
+<ul class="cs-list">
+<li>Supabase = <b>open-source Backend-as-a-Service (BaaS)</b> บน <b>PostgreSQL</b></li>
+<li>ข้อดี: Relational/SQL · สร้าง <b>REST + GraphQL API อัตโนมัติ</b>จาก schema · ไม่มี vendor lock-in (self-host ได้) · <b>RLS</b> · <b>pgvector</b> (vector search สำหรับ AI/RAG)</li>
+<li>ฟีเจอร์: Database · Authentication (email/password, OAuth) · Storage · Realtime (WebSockets) · Edge Functions (serverless)</li>
+<li><b>RLS (Row-Level Security)</b> = ควบคุมสิทธิ์ระดับแถวด้วย policy (SELECT/INSERT/UPDATE/DELETE) ใน Lab ปิดไว้เพราะเป็นข้อมูลจำลองและไม่มี auth แต่ระบบจริงควรเปิด</li>
+<li>Primary key: <code>ticket_id</code> (tickets), <code>query_id</code> (validation) และ <code>created_at</code> เป็น timestamp</li>
+<li>ใช้ <b>Publishable key</b> (<code>sb_publishable_…</code>) เท่านั้น ห้ามใช้ Secret / Service Role key (<code>sb_secret_…</code>) เพราะมีสิทธิ์สูงและ<b>ข้าม RLS ได้</b></li>
+<li>เก็บ <code>supabase_url</code> + <code>supabase_key</code> ใน <code>.streamlit/secrets.toml</code> แล้วอ่านด้วย <code>st.secrets["..."]</code></li>
+<li><code>GRANT SELECT ON TABLE public.helpdesk_tickets, public.helpdesk_validation TO anon;</code> ให้ role anon อ่านได้</li>
+<li>Client: <code>@st.cache_resource</code> + <code>create_client(url, key)</code> สร้างครั้งเดียวแล้วใช้ซ้ำ</li>
+<li>Query chain: <code>.table() → .select() → filter(.eq/.gte/.lt) → .order() → .limit() → .execute()</code> แล้วต่อด้วย <code>pd.json_normalize(response.data)</code></li>
+<li>Filter ที่ <b>database</b> ไม่ใช่โหลดทั้งตารางมา filter ด้วย pandas และรวมทั้งวันสุดท้ายด้วย <code>.lt("created_at", end_date + 1 day)</code></li>
+<li>Query ใช้ <code>@st.cache_data(ttl=600)</code> ปุ่ม Refresh เรียก <code>func.clear()</code> + <code>st.rerun()</code> และ<b>ไม่ clear client</b></li>
+<li>Data API จำกัดจำนวน row ต่อ request จึงใช้ pagination <code>.range(start, start+999)</code> วนจนได้ batch ที่น้อยกว่า page_size</li>
+<li><code>upsert(on_conflict="ticket_id")</code> = ถ้ายังไม่มีให้ insert ถ้ามีแล้วให้ update จึงไม่เกิดแถวซ้ำ (เขียน DB <b>เฉพาะเมื่อกดปุ่ม</b>)</li>
+</ul></div>
+
+<div class="cs-week cs-item" data-week="w13" style="--c:var(--w13)">
+<h3>Week 13 · Lab 13 Deployment</h3>
+<ul class="cs-list">
+<li>Pipeline: <b>Local app → GitHub repository → Streamlit Community Cloud → Public URL → Users</b></li>
+<li>ต้องมี: GitHub account, share.streamlit.io account, แอปที่<b>รัน local ได้</b>, <code>requirements.txt</code> และ (ถ้าใช้ DB) secrets</li>
+<li><code>requirements.txt</code> ใส่เฉพาะ <b>external libraries</b> (streamlit, pandas, scikit-learn, supabase) ส่วน standard library (datetime, json, re, pathlib…) ไม่ต้องใส่</li>
+<li>ดูเวอร์ชันด้วย <code>pip show streamlit</code> และ pin เช่น <code>streamlit&lt;=1.50.0</code> เพื่อกันพฤติกรรมต่างจาก local เมื่อ library อัปเดต</li>
+<li>แอปอ่าน <code>data/</code> ดังนั้น<b>ต้อง upload CSV ขึ้น GitHub ด้วย</b> และทดสอบ local ก่อนด้วย <code>python -m pip install -r requirements.txt</code> + <code>python -m streamlit run main.py</code></li>
+<li>Deploy: Create app → Deploy a public app from GitHub → repo, <b>branch</b> (main), <b>entry point</b> (main.py), App URL, Advanced settings (Python version, Secrets)</li>
+<li><b>ห้าม commit/upload <code>.streamlit/secrets.toml</code></b> ให้ไปวางค่าใน Advanced settings → <b>Secrets</b> แทน</li>
+<li>แนวคิด: <b>source code เดิม</b> เปลี่ยนแค่ที่เก็บ configuration (local secrets.toml → Cloud Secrets) และโค้ดยังอ่าน <code>st.secrets</code> เหมือนเดิม</li>
+<li>เปิดหน้าเว็บได้ ≠ deploy สำเร็จ ถ้าต่อ DB ไม่ได้หรือ workflow หลักพัง ก็ยังถือว่าไม่สมบูรณ์</li>
+</ul></div>
+
+<!-- ===================================================== -->
+<h2 class="no-track">2. ตารางเปรียบเทียบข้ามสัปดาห์</h2>
+
+<h3>เก็บข้อมูลไว้ที่ไหนดี?</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>ที่เก็บ</th><th>Scope (ใครเห็น)</th><th>Lifetime</th><th>เหมาะกับ</th><th>สัปดาห์</th></tr></thead>
+<tbody>
+<tr class="cs-item" data-week="w9"><td>ตัวแปรธรรมดา</td><td>run เดียว</td><td>หายทุก rerun</td><td>ค่าชั่วคราวระหว่างคำนวณ</td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w10"><td><code>@st.cache_data</code></td><td>ทุก session (คืนสำเนา)</td><td>จนกว่าจะ clear / ttl หมด / code เปลี่ยน</td><td>DataFrame, ผล query/API, ผลแปลงข้อมูล</td><td><span class="chip w10">W10</span></td></tr>
+<tr class="cs-item" data-week="w10"><td><code>@st.cache_resource</code></td><td>ทุก session (object เดียวกัน)</td><td>เหมือนด้านบน</td><td>ML model, DB connection/client</td><td><span class="chip w10">W10</span></td></tr>
+<tr class="cs-item" data-week="w11"><td><code>st.session_state</code></td><td>session (แท็บ) เดียว</td><td>จนปิดแท็บ / reload / reset</td><td>counter, chat history, step, ตัวเลือกชั่วคราว</td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w12"><td>Database (Supabase)</td><td>ทุกคน (ตามสิทธิ์)</td><td>ถาวร ข้ามการเข้าใช้</td><td>records ที่ต้องอยู่หลังปิดแอป</td><td><span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w12"><td><code>st.secrets</code> / secrets.toml</td><td>server เท่านั้น</td><td>config ของ deployment</td><td>URL, API key (ห้ามอยู่ใน source code)</td><td><span class="chip w12">W12</span> <span class="chip w13">W13</span></td></tr>
+</tbody></table></div>
+
+<h3>Widget คืนค่าอะไร</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Widget</th><th>คืนค่า</th><th>หมายเหตุ</th><th>สัปดาห์</th></tr></thead>
+<tbody>
+<tr class="cs-item" data-week="w9"><td><code>st.button</code></td><td>bool</td><td>True เฉพาะรอบที่กด (ephemeral)</td><td><span class="chip w9">W9</span> <span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.checkbox</code></td><td>bool</td><td>toggle</td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.radio</code> / <code>st.selectbox</code></td><td>ค่าที่เลือก 1 ค่า</td><td><code>format_func</code> เปลี่ยนแค่ข้อความที่แสดง</td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.multiselect</code></td><td>list</td><td>ว่างได้ ให้เช็กด้วย <code>if selected:</code></td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.slider</code></td><td>number หรือ tuple</td><td>value เป็น tuple = เลือกช่วง</td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.number_input</code></td><td>number</td><td>min/max/step</td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.text_input</code> / <code>st.text_area</code></td><td>str</td><td>เช็กค่าว่างด้วย <code>.strip()</code></td><td><span class="chip w9">W9</span></td></tr>
+<tr class="cs-item" data-week="w11"><td><code>st.date_input</code></td><td>datetime.date</td><td>Lab 11/12 ใช้ min/max จากข้อมูล</td><td><span class="chip w11">W11</span> <span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w9"><td><code>st.form_submit_button</code></td><td>bool</td><td>True เมื่อกด submit (ต้องมีในทุก form)</td><td><span class="chip w9">W9</span></td></tr>
+</tbody></table></div>
+
+<h3>Errors / bugs ที่ออกสอบบ่อย</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>อาการ</th><th>สาเหตุ</th><th>วิธีแก้</th><th>สัปดาห์</th></tr></thead>
+<tbody>
+<tr class="cs-item" data-week="w9"><td>history เหลือแค่ค่าล่าสุด</td><td><code>history = []</code> รันทุก rerun</td><td>เก็บใน session_state</td><td><span class="chip w9">W9</span> <span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w9"><td>หาไฟล์ไม่เจอหลัง deploy</td><td>path อ้างเครื่อง local / relative ต่อ working dir</td><td><code>Path(__file__).resolve().parent</code> + upload data/</td><td><span class="chip w9">W9</span> <span class="chip w13">W13</span></td></tr>
+<tr class="cs-item" data-week="w10"><td><code>ValueError: 1 is not in list</code></td><td>mutate object ใน cache_resource (shared)</td><td>อย่า mutate หรือใช้ cache_data</td><td><span class="chip w10">W10</span></td></tr>
+<tr class="cs-item" data-week="w10"><td>ข้อมูลเก่าไม่อัปเดต (stale)</td><td>cache hit ทั้งที่ source เปลี่ยน</td><td><code>ttl</code>, <code>.clear()</code>, ใส่ mtime เป็น argument</td><td><span class="chip w10">W10</span> <span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w10"><td>UnhashableParamError</td><td>argument hash ไม่ได้</td><td>แปลงเป็น tuple หรือใส่ <code>_</code> นำหน้า</td><td><span class="chip w10">W10</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>KeyError / AttributeError ใน session_state</td><td>อ่าน key ก่อน init</td><td><code>if "k" not in st.session_state:</code> ก่อนใช้</td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>StreamlitAPIException: cannot be modified after the widget … is instantiated</td><td>set state หลังสร้าง widget ที่มี key เดียวกัน</td><td>set ก่อนสร้าง widget</td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>Warning: default ซ้ำ</td><td>ตั้งทั้ง session_state และ <code>value=</code></td><td>เลือก source of truth อันเดียว</td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>count เพิ่มเองทุก rerun</td><td><code>on_click=f()</code> (เรียกทันที)</td><td><code>on_click=f</code></td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>Error เมื่อ set state ของ button key</td><td>button state เป็น ephemeral</td><td>เก็บผลลัพธ์ใน key อื่น</td><td><span class="chip w11">W11</span></td></tr>
+<tr class="cs-item" data-week="w11"><td>ticket ช่วงบ่ายของวันสุดท้ายหาย</td><td>ใช้ <code>&lt;= end_date</code> (เที่ยงคืน)</td><td><code>&lt; end_date + 1 day</code></td><td><span class="chip w11">W11</span> <span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w12"><td><code>KeyError</code> ใน <code>st.secrets</code></td><td>ชื่อ key ไม่ตรง / ไม่ได้ตั้ง Secrets บน cloud</td><td>ตรวจชื่อ <code>supabase_url</code>, <code>supabase_key</code></td><td><span class="chip w12">W12</span> <span class="chip w13">W13</span></td></tr>
+<tr class="cs-item" data-week="w12"><td><code>permission denied</code></td><td>role anon ไม่มีสิทธิ์</td><td><code>GRANT SELECT ... TO anon</code> (+ INSERT, UPDATE ถ้าเขียน)</td><td><span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w12"><td>Matching count มากกว่า rows returned</td><td>Data API จำกัด row ต่อ request</td><td>filter ให้แคบลง หรือทำ pagination ด้วย <code>.range()</code></td><td><span class="chip w12">W12</span></td></tr>
+<tr class="cs-item" data-week="w13"><td><code>ModuleNotFoundError</code> บน cloud</td><td>ไม่มี library ใน requirements.txt</td><td>เพิ่ม library + version</td><td><span class="chip w13">W13</span></td></tr>
+</tbody></table></div>
+
+<h3>Code patterns ที่ต้องเขียนได้</h3>
+<div class="grid c2">
+<div class="cs-item" data-week="w10"><span class="chip w10">W10</span>
+<script type="text/plain" class="code" data-title="cache patterns">
+@st.cache_data(ttl=600, show_spinner="Loading...")
+def load_data(path, file_mtime):
+    return pd.read_csv(path)
+
+@st.cache_resource
+def load_model():
+    return joblib.load("model.joblib")
+
+load_data.clear()          # ฟังก์ชันเดียว
+st.cache_data.clear()      # cache_data ทั้งหมด
+</script></div>
+<div class="cs-item" data-week="w11"><span class="chip w11">W11</span>
+<script type="text/plain" class="code" data-title="session state + callback">
+if "count" not in st.session_state:
+    st.session_state.count = 0
+
+def increment():
+    st.session_state.count += 1
+
+st.button("Add", on_click=increment)   # ไม่มี ()
+st.write("Count =", st.session_state.count)
+</script></div>
+<div class="cs-item" data-week="w12"><span class="chip w12">W12</span>
+<script type="text/plain" class="code" data-title="supabase query">
+@st.cache_resource
+def init_connection():
+    return create_client(st.secrets["supabase_url"],
+                         st.secrets["supabase_key"])
+
+supabase = init_connection()
+res = (supabase.table("helpdesk_tickets")
+       .select("ticket_id, created_at, category")
+       .gte("created_at", "2026-01-01")
+       .lt("created_at", "2026-02-01")
+       .eq("category", "Network")
+       .order("created_at", desc=True)
+       .limit(10)
+       .execute())
+df = pd.json_normalize(res.data)
+</script></div>
+<div class="cs-item" data-week="w13"><span class="chip w13">W13</span>
+<script type="text/plain" class="code" data-title="requirements.txt" data-lang="text">
+streamlit<=1.50.0
+pandas<=2.2.3
+</script>
+<script type="text/plain" class="code" data-title=".streamlit/secrets.toml (ห้าม commit!)" data-lang="toml">
+supabase_url = "https://xxxxxxxxxxxx.supabase.co"
+supabase_key = "sb_publishable_xxxxxxxx"
+</script></div>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="no-track">3. อภิธานศัพท์</h2>
+<div id="glossary"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปย่อ Week 9 – 13 · 06016474 Applied AI for IT</footer>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, $$, esc } = AAIT;
+  const G = [
+    ["w9", "Streamlit", "Python library สร้าง interactive web app จาก Python script โดยไม่ต้องเขียน frontend แยก"],
+    ["w9", "Client–server architecture", "Python/งานคำนวณอยู่ที่ server ส่วน browser (client) แสดง UI และส่ง action ของผู้ใช้"],
+    ["w9", "WebSocket", "ช่องทางสื่อสารสองทางแบบเปิดค้างระหว่าง browser กับ Streamlit server"],
+    ["w9", "Session", "บริบทการใช้งานของ 1 แท็บ browser (1 แท็บ = 1 session)"],
+    ["w9", "Rerun", "การรัน script ใหม่ตั้งแต่บนลงล่างเมื่อผู้ใช้เปลี่ยน widget (นอก form) หรือ source code เปลี่ยน"],
+    ["w9", "Widget", "input element เช่น button, slider, selectbox ที่คืนค่าเป็น Python value"],
+    ["w9", "Form", "กลุ่ม widget ที่ส่งค่าพร้อมกันเมื่อกด form_submit_button (ลด rerun)"],
+    ["w9", "st.data_editor", "ตารางให้ผู้ใช้แก้ไข คืน DataFrame ที่แก้ แต่ไม่บันทึกลงไฟล์อัตโนมัติ"],
+    ["w9", "st.metric", "แสดง KPI พร้อม delta (delta_color: normal / inverse)"],
+    ["w10", "Cache hit", "เจอ entry ที่ตรงและยังใช้ได้ คืนผลเดิมโดยไม่รัน function body"],
+    ["w10", "Cache miss", "ไม่เจอ entry ที่ตรง ต้องรันฟังก์ชันแล้วเก็บผลลง cache"],
+    ["w10", "Cache identity / key", "ฟังก์ชัน + arguments (ที่ hash ได้, ไม่ขึ้นต้นด้วย _) + source code"],
+    ["w10", "st.cache_data", "cache ข้อมูล คืนสำเนาให้ผู้เรียกแต่ละครั้ง"],
+    ["w10", "st.cache_resource", "cache resource ที่แชร์ object เดียวกันทุก session เช่น model, DB connection"],
+    ["w10", "Hashable", "ค่าที่คำนวณ hash ได้ (tuple, str, int) ใช้เป็นส่วนหนึ่งของ cache key"],
+    ["w10", "Stale cache", "cache ที่เก็บข้อมูลเก่าทั้งที่ source เปลี่ยนแล้ว"],
+    ["w10", "ttl", "time-to-live: อายุของ cache entry (วินาทีหรือ timedelta)"],
+    ["w10", "max_entries", "จำนวน entry สูงสุด เมื่อเต็มจะลบอันเก่าสุด"],
+    ["w10", "TF-IDF", "แปลงข้อความเป็น numerical features ตามความสำคัญของคำ/คู่คำ (ส่วนเสริม Lab 10)"],
+    ["w10", "Sentence embedding (MiniLM)", "แปลงประโยคเป็น vector 384 มิติ ข้อความความหมายใกล้กัน vector ใกล้กัน"],
+    ["w10", "Cosine similarity", "วัดความคล้ายของ vector; ถ้า normalize แล้ว dot product = cosine similarity"],
+    ["w11", "st.session_state", "dictionary-like object เก็บค่าต่อ session ข้าม rerun"],
+    ["w11", "Widget key", "ชื่อเฉพาะของ widget ซึ่งผูกค่าเข้ากับ st.session_state[key]"],
+    ["w11", "Callback", "ฟังก์ชันที่ Streamlit เรียกก่อน rerun เมื่อ widget เปลี่ยน (on_click / on_change)"],
+    ["w11", "Ephemeral button state", "ค่า True ของปุ่มอยู่แค่รอบเดียว ต้องเก็บ 'ผลลัพธ์' แทน"],
+    ["w11", "Invalidate (derived state)", "ล้างผลลัพธ์ที่ไม่ตรงกับ input ใหม่ เช่น ล้าง trained_model เมื่อเปลี่ยนวันที่"],
+    ["w11", "st.rerun()", "สั่งให้ script รันใหม่ทันที"],
+    ["w12", "Supabase", "open-source Backend-as-a-Service บน PostgreSQL"],
+    ["w12", "BaaS", "Backend-as-a-Service: ได้ backend สำเร็จรูป (DB, auth, storage, API) ไม่ต้องเขียน infra เอง"],
+    ["w12", "PostgreSQL", "relational database (SQL) ที่ Supabase ใช้"],
+    ["w12", "RLS", "Row-Level Security: policy ควบคุมสิทธิ์อ่าน/เขียนระดับแถว"],
+    ["w12", "pgvector", "extension เก็บ/ค้นหา vector สำหรับ AI และ RAG"],
+    ["w12", "RAG", "Retrieval-Augmented Generation: ค้นข้อมูลที่เกี่ยวข้องมาให้ LLM ใช้ตอบ"],
+    ["w12", "Publishable key", "key สาธารณะสิทธิ์จำกัด (sb_publishable_…) ใช้ใน Lab"],
+    ["w12", "Secret / Service Role key", "key สิทธิ์สูง ข้าม RLS ได้ (sb_secret_…) ห้ามใช้ในแอปนี้"],
+    ["w12", "anon role", "role ของผู้ใช้ไม่ระบุตัวตน ต้อง GRANT สิทธิ์ให้"],
+    ["w12", "Primary key", "คอลัมน์ที่ไม่ซ้ำใช้ระบุแถว เช่น ticket_id"],
+    ["w12", "Pagination", "ดึงข้อมูลทีละช่วงด้วย .range(start, end) เพราะ API จำกัดจำนวนแถวต่อ request"],
+    ["w12", "Upsert", "insert ถ้ายังไม่มี / update ถ้ามี (ใช้ on_conflict กับ primary key)"],
+    ["w12", "Boilerplate", "ข้อความรูปแบบ (Dear support…, Best regards) ที่ไม่ใช่เนื้อหาปัญหา"],
+    ["w13", "Deployment", "นำแอปจาก local ขึ้น server ให้คนอื่นเข้าถึงผ่าน URL"],
+    ["w13", "Streamlit Community Cloud", "บริการ deploy แอป Streamlit จาก GitHub repository"],
+    ["w13", "requirements.txt", "รายการ external Python libraries (+ version) ให้ cloud ติดตั้ง"],
+    ["w13", "Entry point", "ไฟล์หลักที่ cloud ใช้รัน เช่น main.py"],
+    ["w13", "Secrets (Advanced settings)", "ที่วางค่า secrets.toml บน cloud แทนการ commit ไฟล์"],
+    ["w13", "Public URL", "ลิงก์สาธารณะของแอปที่ deploy แล้ว"],
+  ];
+  const gl = $("#glossary");
+  gl.innerHTML = G.map(([w, t, d]) => `<div class="gl-item cs-item" data-week="${w}"><span class="chip ${w}">${AAIT.WEEKS[w].label}</span> <span class="term">${esc(t)}</span><div class="def">${esc(d)}</div></div>`).join("");
+
+  let wk = "all";
+  const apply = () => {
+    const q = $("#csSearch").value.trim().toLowerCase();
+    $$(".cs-item").forEach((el) => {
+      const okW = wk === "all" || el.dataset.week === wk;
+      const okQ = !q || el.textContent.toLowerCase().includes(q);
+      el.classList.toggle("hidden-by-filter", !(okW && okQ));
+    });
+    // inside week summaries, also filter individual bullets by the search text
+    $$(".cs-week").forEach((box) => $$("li", box).forEach((li) => li.classList.toggle("hidden-by-filter", !!q && !li.textContent.toLowerCase().includes(q))));
+  };
+  $$(".filter-btn").forEach((b) => b.addEventListener("click", () => {
+    wk = b.dataset.f;
+    $$(".filter-btn").forEach((x) => x.classList.toggle("on", x === b));
+    apply();
+  }));
+  $("#csSearch").addEventListener("input", apply);
+});
+</script>
+</body>
+</html>

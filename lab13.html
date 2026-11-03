@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 13 · Deployment</title>
+<meta name="description" content="สรุป Week 13 / Lab 13: Deploy Streamlit app ขึ้น Streamlit Community Cloud ผ่าน GitHub พร้อม requirements.txt และ Secrets">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .pipe { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; margin: 6px 0 12px; }
+  .pipe button { flex: 1 1 120px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .pipe button b { display: block; font-size: 12px; color: var(--wk); }
+  .pipe button.on { border-color: var(--wk); box-shadow: inset 0 0 0 1px var(--wk); background: color-mix(in srgb, var(--wk) 10%, var(--surface)); }
+  .pipe .arrow { display: grid; place-items: center; padding: 0 6px; color: var(--muted); font-size: 20px; }
+  .deploy-form { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+  .deploy-form label.k { font-size: 14px; color: var(--text-2); font-weight: 600; }
+  .deploy-form input[type="text"], .deploy-form select { width: 100%; }
+  .status { border-radius: 10px; padding: 12px 14px; border: 1px solid var(--border); background: var(--surface-2); font-size: 14.5px; }
+  .status.ok { border-color: var(--ok); background: var(--ok-bg); }
+  .status.bad { border-color: var(--bad); background: var(--bad-bg); }
+  .status.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .status .t { font-weight: 700; margin-bottom: 4px; }
+  .status pre { font-family: var(--mono); font-size: 12.8px; white-space: pre-wrap; margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--code-bg); color: var(--code-text); }
+  .req-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; margin: 5px 0; background: var(--surface); }
+  .req-row .imp { flex: 1 1 200px; font-family: var(--mono); font-size: 13.5px; }
+  .req-row.right { border-color: var(--ok); background: var(--ok-bg); }
+  .req-row.wrong { border-color: var(--bad); background: var(--bad-bg); }
+  .tree { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; white-space: pre; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
+  @media (max-width: 720px) { .deploy-form { grid-template-columns: minmax(0, 1fr); } .pipe { flex-direction: column; } .pipe .arrow { transform: rotate(90deg); } }
+</style>
+</head>
+<body class="w13" data-page="w13">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">● Week 13 · Lab 13</span>
+  <h1>Deploy Streamlit App<br><span class="muted" style="font-size:.6em;font-weight:500">จาก Local สู่ Public URL ด้วย Streamlit Community Cloud</span></h1>
+  <p class="lead">ตอนนี้แอปที่เราทำรันได้แค่บนเครื่องตัวเอง (Local) คนอื่นยังเข้าใช้ไม่ได้ Lab 13 สอน <b>Deploy</b> ขึ้น <b>Streamlit Community Cloud</b> เพื่อให้ได้ <b>Public URL</b> ซึ่งต้องจัดการ 3 เรื่อง คือ <b>Dependencies (requirements.txt)</b>, <b>Secrets</b> และ <b>External Database</b></p>
+  <div class="meta"><span class="chip w13">Week 13</span><span class="chip">Local → GitHub → Cloud → Public URL</span><span class="chip exam">★ = ออกสอบบ่อย</span></div>
+</section>
+
+<div class="callout key">
+  <div class="callout-title">🧭 Lab 13 มี 2 รอบการ Deploy</div>
+  <ol style="margin:0">
+    <li><b>Part 1 · Simple Streamlit Application</b> (IT Fortune Cookie): <b>ไม่มี Database และไม่มี Secrets</b> ใช้เรียน <b>Deployment workflow พื้นฐาน</b></li>
+    <li><b>Part 2 · Helpdesk Application จาก Lab 12</b>: เพิ่มเรื่อง <b>Dependencies, Secrets และ External Database (Supabase)</b></li>
+  </ol>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">1</span> ภาพรวม: Deployment Pipeline <span class="chip w13">W13</span><span class="chip exam">★★</span></h2>
+
+<p><b>Deploy</b> คือการนำแอปจากเครื่องเรา ไปรันบน <b>server บน cloud</b> ให้ผู้ใช้คนอื่นเข้าถึงได้ผ่าน URL สาธารณะ แนวคิดของ Lab นี้มี 5 ขั้น</p>
+<div class="flow">
+  <div class="step"><b>1</b>Local Application</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>GitHub Repository</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Streamlit Community Cloud</div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Public URL</div><div class="arrow">→</div>
+  <div class="step"><b>5</b>Users</div>
+</div>
+<div class="callout analogy"><div class="callout-title">🍳 เปรียบเทียบให้เห็นภาพ</div>
+Local คือเราทำอาหารกินเองที่บ้าน ส่วน GitHub คือสูตรอาหารที่เขียนเก็บไว้ (source code) Community Cloud คือร้านอาหารที่อ่านสูตรนั้นแล้วทำอาหารเสิร์ฟ ร้านต้องรู้ว่าใช้วัตถุดิบอะไร (requirements.txt) และกุญแจตู้เซฟ (Secrets) ที่ห้ามเขียนลงในสูตรที่คนอื่นอ่านได้</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> คลิกแต่ละขั้นของ pipeline: เกิดอะไรขึ้น ต้องมีอะไร และพังเพราะอะไรได้บ้าง</div>
+  <div class="sim-body">
+    <div class="pipe" id="pipe"></div>
+    <div id="pipeInfo" class="panel"></div>
+  </div>
+</div>
+
+<div class="callout tip"><div class="callout-title">🔗 เชื่อมกับ Week 9: Local vs Deployed</div>
+ตอน Local นั้น server กับ browser อยู่เครื่องเดียวกัน (<i>one machine, still two roles</i>) แต่พอ Deploy แล้ว <b>server คือเครื่องบน cloud</b> ผู้ใช้อยู่อีกเครื่อง เชื่อมกันผ่าน network ดังนั้น <b>path, library และ secret ต้องมีอยู่บน cloud server</b> ไม่ใช่บนเครื่องเรา ทุกขั้นตอนใน Lab นี้มีไว้เพื่อ “ขนสิ่งที่ server ต้องใช้” ขึ้นไปให้ครบ</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">2</span> Section 1: เตรียมตัวก่อน Deploy <span class="chip w13">W13</span><span class="chip exam">★</span></h2>
+<p>ก่อนนำแอปขึ้น cloud ต้องเตรียม<b>ส่วนประกอบของ project ให้ครบ</b> เพื่อให้ server <b>สร้าง environment และรันแอปได้ถูกต้อง ใกล้เคียงกับ environment บนเครื่องเรา</b></p>
+<div class="table-wrap"><table>
+<thead><tr><th>สิ่งที่ต้องมี</th><th>ใช้ทำอะไร</th></tr></thead>
+<tbody>
+<tr><td><b>GitHub account</b> (github.com)</td><td>เก็บ source code ใน repository ซึ่ง Community Cloud จะดึงโค้ดไป deploy</td></tr>
+<tr><td><b>Streamlit Community Cloud account</b> (share.streamlit.io)</td><td>บริการที่รันแอปให้ฟรี login ด้วย GitHub หรือ Google account ได้</td></tr>
+<tr><td><b>แอปที่รันบน Local ได้แล้ว</b></td><td>ถ้า local ยังพัง ขึ้น cloud ก็พังแน่นอน ต้องทดสอบก่อนเสมอ</td></tr>
+<tr><td><b><code>requirements.txt</code></b></td><td>ระบุ <b>Python libraries ที่แอปต้องใช้</b> เช่น streamlit, pandas, scikit-learn, supabase เพื่อให้ cloud environment <b>ติดตั้ง dependencies ก่อนเริ่มรันแอป</b></td></tr>
+<tr><td><b><code>.streamlit/secrets.toml</code></b> (เฉพาะแอปที่ต่อ Supabase)</td><td>เก็บข้อมูลที่<b>ไม่ควรเขียนไว้ใน source code</b> เช่น URL และ Key สำหรับเชื่อมต่อ Supabase</td></tr>
+</tbody></table></div>
+<div class="callout bad"><div class="callout-title">⛔ ข้อควรระวัง (ออกสอบแน่นอน)</div>
+<b>ห้าม Upload หรือ Commit <code>.streamlit/secrets.toml</code> ขึ้น GitHub เด็ดขาด</b> เพราะ repository อาจเป็น public ใครก็อ่าน key ได้ แล้วนำไปเข้าถึง database ของเรา บน cloud ให้ใส่ค่าในช่อง <b>Advanced settings → Secrets</b> แทน (ดูหัวข้อ 8)</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">3</span> requirements.txt: บอก cloud ว่าต้องติดตั้งอะไร <span class="chip w13">W13</span><span class="chip exam">★★★</span></h2>
+
+<p>เครื่องของเรามี library ที่ <code>pip install</code> ไว้แล้ว แต่ <b>cloud server เริ่มจาก environment ว่าง ๆ</b> มันจะไม่รู้ว่าต้องติดตั้งอะไร ถ้าไม่มี <code>requirements.txt</code> จึงต้องเขียนไฟล์นี้ไว้ <b>ในโฟลเดอร์เดียวกับ main.py</b></p>
+
+<h3>Library ไหนต้องใส่ และไหนไม่ต้องใส่?</h3>
+<div class="compare">
+  <div class="a"><span class="label">External libraries → ต้องใส่</span>
+    <p>library ที่ติดตั้งเพิ่มด้วย pip เช่น</p>
+    <ul><li><code>streamlit</code>: สร้าง Web Application</li><li><code>pandas</code>: อ่านและจัดการข้อมูล CSV</li><li>(Helpdesk) <code>scikit-learn</code>, <code>supabase</code></li></ul></div>
+  <div class="b"><span class="label">Python Standard Library → ไม่ต้องใส่</span>
+    <p>มาพร้อม Python อยู่แล้ว เช่น <code>datetime</code>, <code>hashlib</code>, <code>pathlib</code>, <code>random</code>, <code>json</code>, <code>re</code>, <code>time</code></p>
+    <p class="small muted">main.py ของ Lab 13 import ทั้งหมดนี้ แต่ใช้ external library แค่ 2 ตัว</p></div>
+</div>
+
+<script type="text/plain" class="code" data-title="Lab 13 · main.py (ส่วน import)">
+from datetime import datetime, timedelta, timezone   ##! `datetime` = **standard library** ไม่ต้องใส่ใน requirements.txt
+from hashlib import sha256                           ##! standard library
+from pathlib import Path                             ##! standard library
+from random import Random                            ##! standard library
+import json                                          ##! standard library
+import re                                            ##! standard library (regular expression)
+import time                                          ##! standard library
+
+import pandas as pd                                  ##! **external** ต้องใส่ `pandas` ใน requirements.txt
+import streamlit as st                               ##! **external** ต้องใส่ `streamlit` ใน requirements.txt
+</script>
+
+<h3>เช็กเวอร์ชันที่เครื่องเราใช้ด้วย <code>pip show</code></h3>
+<script type="text/plain" class="code" data-lang="bash" data-title="Terminal">
+pip show streamlit        ##! แสดงข้อมูลของ package รวมถึงบรรทัด `Version: ...` ที่ติดตั้งบนเครื่องเรา
+pip show pandas           ##! ทำแบบเดียวกันกับทุก external library (`pip show library-name`)
+</script>
+
+<h3>เขียนไฟล์และ “pin” เวอร์ชัน</h3>
+<script type="text/plain" class="code" data-lang="text" data-title="requirements.txt (Part 1 · Simple app)">
+streamlit<=1.50.0     ##! ติดตั้ง Streamlit เวอร์ชัน **1.50.0 หรือต่ำกว่า** (ไม่เกินค่าที่กำหนด)
+pandas<=2.2.3         ##! ติดตั้ง pandas เวอร์ชันไม่เกิน 2.2.3
+</script>
+<div class="table-wrap"><table>
+<thead><tr><th>รูปแบบ</th><th>ความหมาย</th><th>ตัวอย่าง</th></tr></thead>
+<tbody>
+<tr><td><code>pkg</code></td><td>ไม่ระบุเวอร์ชัน ติดตั้งเวอร์ชันล่าสุดตอน deploy (เสี่ยงที่สุด)</td><td><code>pandas</code></td></tr>
+<tr><td><code>pkg==X</code></td><td>ต้องเป็นเวอร์ชันนี้<b>เท่านั้น</b></td><td><code>pandas==2.2.3</code></td></tr>
+<tr><td><code>pkg&lt;=X</code></td><td><b>ไม่เกิน</b> X (สิ่งที่ Lab ใช้)</td><td><code>streamlit&lt;=1.50.0</code></td></tr>
+<tr><td><code>pkg&gt;=X</code></td><td><b>อย่างน้อย</b> X (ใหม่กว่าได้)</td><td><code>supabase&gt;=2.0</code></td></tr>
+</tbody></table></div>
+<div class="callout exam"><div class="callout-title">★ ทำไมต้องกำหนดเวอร์ชัน?</div>
+เพื่อ<b>ลดโอกาสที่แอปบน cloud จะทำงานต่างจากเครื่อง Local</b> เพราะถ้าไม่ล็อกไว้ cloud อาจติดตั้ง library <b>เวอร์ชันใหม่กว่า</b>ที่เราใช้พัฒนาและทดสอบ ซึ่งอาจเปลี่ยน API หรือพฤติกรรม (เช่น parameter บางตัวเลิกใช้) ทำให้แอปพังทั้งที่โค้ดไม่ได้เปลี่ยน</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> สร้าง requirements.txt จาก import ของ Lab 13 main.py</div>
+  <div class="sim-body">
+    <p class="howto">เลือกว่าแต่ละ import เป็น <b>Standard library</b> หรือ <b>External</b> แล้วกด “สร้างไฟล์” ระบบจะตรวจคำตอบและสร้าง requirements.txt ให้</p>
+    <div id="reqRows"></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" type="button" id="reqBuild">สร้าง requirements.txt</button><button class="btn" type="button" id="reqReset">เริ่มใหม่</button></div>
+    <div id="reqOut" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">4</span> โครงสร้าง Project และทดลองรันบน Local <span class="chip w13">W13</span><span class="chip exam">★</span></h2>
+<p>ตรวจโครงสร้าง project ของ Part 1 ให้เป็นแบบนี้</p>
+<div class="tree">lab13_simple_deployment/
+│
+├── main.py
+├── requirements.txt
+└── data/
+    ├── students.csv
+    ├── teacher.csv
+    ├── subject.csv
+    └── fortunes.csv</div>
+<div class="callout warn"><div class="callout-title">⚠ จุดที่คนลืมบ่อย: โฟลเดอร์ data/</div>
+แอปนี้<b>อ่านข้อมูลจากโฟลเดอร์ <code>data/</code></b> ดังนั้น<b>ไฟล์ CSV ต้องถูก upload ขึ้น GitHub พร้อม source code ด้วย</b> ไม่อย่างนั้นบน cloud จะหาไฟล์ไม่เจอ (เพราะ path เป็นของ server ตามที่เรียนใน Week 9)</div>
+
+<h3>ทดลองรันบน Local อีกครั้งก่อน Deploy</h3>
+<p>เพื่อยืนยันว่า<b>เวอร์ชันของ library, โครงสร้างโฟลเดอร์ และไฟล์ที่แอปต้องใช้</b>ถูกต้องครบถ้วน</p>
+<script type="text/plain" class="code" data-lang="bash" data-title="Terminal">
+conda activate streamlit-env                    ##! a. เปิด environment เดิมที่ใช้กับ Streamlit จาก Lab ก่อน ๆ
+python -m pip install -r requirements.txt       ##! b. ติดตั้ง package ตามไฟล์ (`-r` = อ่านรายการจากไฟล์) ซึ่งเป็นวิธีเดียวกับที่ cloud จะทำ จึงเป็นการทดสอบไฟล์ไปในตัว
+python -m streamlit run main.py                 ##! c. รันแอป (`python -m` ช่วยให้ใช้ streamlit ของ environment นี้แน่นอน)
+</script>
+<p>ถ้ารันสำเร็จจะเห็นหน้า <b>IT Fortune Cookie</b> ให้เลือกชื่อ ตอบคำถาม 6 ข้อ แล้วกด <b>Reveal My Destiny</b> เพื่อดูคำทำนาย</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">5</span> Section 3: Upload Project ขึ้น GitHub <span class="chip w13">W13</span></h2>
+<p>Streamlit Community Cloud <b>ใช้ source code จาก GitHub Repository</b> ในการสร้างและ deploy แอป</p>
+<ol class="steps">
+  <li>บน GitHub กด <b>Create New (+)</b> มุมขวาบน แล้วเลือก <b>New repository</b></li>
+  <li>ตั้งชื่อ <code>lab13-streamlit-simple</code> ใส่ description เปิด <b>Add README</b> แล้วกด <b>Create repository</b></li>
+  <li>กด <b>Add file → Upload files</b> แล้วอัปโหลด <code>main.py</code>, <code>requirements.txt</code> และโฟลเดอร์ <code>data</code> จากนั้นกด <b>Commit changes</b></li>
+</ol>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ไฟล์ไหนควรขึ้น GitHub?</div>
+  <div class="sim-body">
+    <div class="row" style="margin-bottom:10px"><div class="seg" id="upMode"><button type="button" class="on" data-m="simple">Part 1 · Simple app</button><button type="button" data-m="helpdesk">Part 2 · Helpdesk app</button></div></div>
+    <div id="upGame"></div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">6</span> Section 4: Deploy แอปแรก (Simple app) <span class="chip w13">W13</span><span class="chip exam">★★</span></h2>
+<ol class="steps">
+  <li>เข้า Streamlit Community Cloud แล้วกด <b>Create app</b> (มุมขวาบน)</li>
+  <li>เลือก <b>Deploy a public app from GitHub</b></li>
+  <li>กรอกข้อมูล:
+    <ul>
+      <li><b>Repository</b>: repo ของแอป</li>
+      <li><b>Branch</b>: เช่น <code>main</code> คือ branch ที่จะดึงโค้ดไป deploy</li>
+      <li><b>Entry point (Main file path)</b>: <code>main.py</code> คือไฟล์ที่ cloud จะสั่ง <code>streamlit run</code></li>
+      <li><b>App URL</b>: custom subdomain เช่น <code>lab13-app-simple-6607XXXX</code> (ใส่รหัสนักศึกษา)</li>
+      <li><b>Advanced settings → Python version</b>: <b>3.13</b> ให้สอดคล้องกับเวอร์ชัน library ที่ใช้ใน Lab</li>
+    </ul></li>
+  <li>กด <b>Deploy</b> ระหว่างรอ กด <b>Manage app</b> (มุมขวาล่าง) เพื่อดูความคืบหน้าและ log ของการ deploy</li>
+  <li>เมื่อเสร็จ เปิด <b>Public URL</b> แล้วตรวจว่าแอปทำงาน<b>เหมือนตอนรันบน Local</b></li>
+</ol>
+<div class="callout ok"><div class="callout-title">✅ Checkpoint 1</div>Public URL มีรหัสนักศึกษาตามรูปแบบ และแอปเปิดใช้งาน เลือกชื่อ ตอบคำถาม และแสดงคำทำนายได้ตามปกติ</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> จำลองหน้า “Deploy an app”: ตั้งค่าแล้วดูผลลัพธ์</div>
+  <div class="sim-body">
+    <p class="howto">ลองตั้งค่าให้ผิดทีละจุด เช่น ลืม pandas ลืมอัปโหลด data/ ไม่ใส่ Secrets หรือพิมพ์ entry point ผิด แล้วกด Deploy ดูว่า error หน้าตาเป็นอย่างไร</p>
+    <div class="grid c2">
+      <div class="deploy-form" id="dpForm">
+        <label class="k" for="dpRepo">Repository</label>
+        <select id="dpRepo"><option value="lab13-streamlit-simple">6607xxxx/lab13-streamlit-simple</option><option value="lab13-helpdesk">6607xxxx/lab13-helpdesk</option></select>
+        <label class="k" for="dpBranch">Branch</label>
+        <select id="dpBranch"><option>main</option><option>master</option></select>
+        <label class="k" for="dpEntry">Main file path</label>
+        <input type="text" id="dpEntry" value="main.py">
+        <label class="k" for="dpUrl">App URL</label>
+        <div class="row" style="gap:4px"><input type="text" id="dpUrl" value="lab13-app-simple-6607xxxx" style="flex:1"><span class="small muted">.streamlit.app</span></div>
+        <label class="k" for="dpPy">Python version</label>
+        <select id="dpPy"><option>3.13</option><option>3.12</option></select>
+        <label class="k">requirements.txt มี</label>
+        <div class="row small" id="dpReq">
+          <label><input type="checkbox" value="streamlit" checked> streamlit</label>
+          <label><input type="checkbox" value="pandas" checked> pandas</label>
+          <label><input type="checkbox" value="scikit-learn"> scikit-learn</label>
+          <label><input type="checkbox" value="supabase"> supabase</label>
+        </div>
+        <label class="k">ใน repo มี</label>
+        <div class="row small">
+          <label><input type="checkbox" id="dpData" checked> data/*.csv</label>
+          <label><input type="checkbox" id="dpTraining"> training.py</label>
+          <label><input type="checkbox" id="dpSecretFile"> .streamlit/secrets.toml</label>
+        </div>
+        <label class="k">Supabase</label>
+        <label class="small"><input type="checkbox" id="dpGrant" checked> รัน <code>GRANT SELECT ... TO anon</code> แล้ว (Lab 12)</label>
+        <label class="k" for="dpSecrets">Secrets<br><span class="small muted" style="font-weight:400">(Advanced settings)</span></label>
+        <textarea id="dpSecrets" class="mono" style="min-height:76px" placeholder='supabase_url = "https://xxxx.supabase.co"&#10;supabase_key = "sb_publishable_xxxx"'></textarea>
+        <span></span>
+        <div class="row"><button class="btn primary" type="button" id="dpGo">Deploy</button><button class="btn sm" type="button" id="dpFillOk">ใส่ค่าที่ถูกต้องให้</button></div>
+      </div>
+      <div><div id="dpStatus" class="status"><div class="t">ยังไม่ได้ deploy</div>ตั้งค่าทางซ้ายแล้วกด Deploy</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">7</span> Part 2 · Section 5: เตรียม Helpdesk App (จาก Lab 12) <span class="chip w13">W13</span><span class="chip exam">★</span></h2>
+<p>ใช้ <b>project Lab 12 เดิม</b> โดยไม่ต้องสร้างโฟลเดอร์ใหม่หรือคัดลอกโค้ดไปที่อื่น</p>
+<div class="grid c2">
+  <div><span class="label">โครงสร้างบนเครื่อง (Local)</span><div class="tree">Lab12/
+│
+├── main.py
+├── training.py
+└── .streamlit/
+    └── secrets.toml   ← เก็บไว้ในเครื่องเท่านั้น</div></div>
+  <div><span class="label">ไฟล์ที่ควรอยู่บน GitHub (lab13-helpdesk)</span><div class="tree">lab13-helpdesk/
+│
+├── main.py
+├── training.py
+└── requirements.txt   ← สร้างเพิ่ม</div></div>
+</div>
+<ol class="steps">
+  <li>ตรวจว่า project มี <code>main.py</code>, <code>training.py</code> และ <code>.streamlit/secrets.toml</code></li>
+  <li>สร้าง <code>requirements.txt</code> ไว้ในโฟลเดอร์เดียวกับ main.py และเช็กเวอร์ชันด้วย <code>pip show library-name</code> (แอปนี้ใช้ <code>streamlit</code>, <code>pandas</code>, <code>scikit-learn</code> และ <code>supabase</code>)</li>
+  <li>สร้าง repo ใหม่ชื่อ <code>lab13-helpdesk</code> แล้ว upload/push <b>เฉพาะ main.py, training.py และ requirements.txt</b></li>
+</ol>
+<script type="text/plain" class="code" data-lang="text" data-title="requirements.txt (Part 2 · Helpdesk — ตัวอย่างจาก Lab 12)">
+streamlit>=1.40       ##! `>=` = อย่างน้อยเวอร์ชันนี้ (ใหม่กว่าได้)
+pandas>=2.2
+scikit-learn>=1.5     ##! ใช้ใน training.py (TfidfVectorizer + LogisticRegression) ชื่อ package คือ `scikit-learn` แต่ตอน import ใช้ `sklearn`
+supabase>=2.0         ##! client สำหรับ `create_client(url, key)`
+</script>
+<div class="callout bad"><div class="callout-title">⛔ ย้ำอีกครั้ง</div><code>.streamlit/secrets.toml</code> เก็บข้อมูลเชื่อมต่อ Supabase <b>ห้ามเผยแพร่บน GitHub โดยเด็ดขาด</b></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">8</span> Section 6: Secrets บน Cloud และการ Deploy Helpdesk <span class="chip w13">W13</span><span class="chip exam">★★★</span></h2>
+<ol class="steps">
+  <li>ตั้งค่าหลัก: Repository = repo ของ Helpdesk, Branch = <code>main</code>, Entry point = <code>main.py</code>, App URL เช่น <code>lab13-helpdesk-66070xxx</code></li>
+  <li>เปิด <b>Advanced settings</b>: ตั้ง <b>Python version 3.12</b> แล้วในช่อง <b>Secrets</b> ให้<b>นำค่าจาก <code>.streamlit/secrets.toml</code> บนเครื่องมาวาง</b></li>
+  <li>กด <b>Save</b> แล้วกด <b>Deploy</b></li>
+</ol>
+
+<div class="compare">
+  <div class="b"><span class="label">Local</span>
+<script type="text/plain" class="code" data-lang="toml" data-title=".streamlit/secrets.toml (บนเครื่อง)">
+supabase_url = "https://xxxxxxxxxxxx.supabase.co"   ##! API URL ของ project (ลงท้าย `.supabase.co`) ค่านี้เป็นตัวอย่าง placeholder
+supabase_key = "sb_publishable_xxxxxxxx"            ##! **Publishable key** เท่านั้น ห้ามใช้ Secret / Service Role key ที่ข้าม RLS ได้
+</script></div>
+  <div class="a"><span class="label">Cloud</span>
+    <p>Streamlit Community Cloud → <b>Advanced settings → Secrets</b>: วาง<b>เนื้อหาเดียวกัน</b> (รูปแบบ TOML) ลงในช่องนี้</p>
+    <p class="small muted">cloud เก็บค่านี้ให้แบบไม่อยู่ใน repository</p></div>
+</div>
+
+<script type="text/plain" class="code" data-title="Lab 12 · main.py (ไม่ต้องแก้แม้แต่บรรทัดเดียวตอน deploy)">
+@st.cache_resource(show_spinner="Connecting to Supabase...", show_time=True)   ##! cache client ไว้ใช้ซ้ำ (W10: connection = resource)
+def init_connection() -> Client:
+    url: str = st.secrets["supabase_url"]     ##! `st.secrets` อ่านจาก `.streamlit/secrets.toml` ตอน Local และอ่านจาก **Cloud Secrets** ตอน deploy โดย**โค้ดเหมือนเดิม**
+    key: str = st.secrets["supabase_key"]     ##! ถ้าลืมใส่ Secrets บน cloud บรรทัดเหล่านี้จะเกิด **KeyError**
+    return create_client(url, key)
+</script>
+<div class="callout key"><div class="callout-title">💡 แนวคิดสำคัญที่สุดของ Part 2</div>
+แอปยัง<b>ใช้ source code เดิม</b> สิ่งที่เปลี่ยนมีแค่<b>ตำแหน่งที่เก็บ configuration</b> คือจาก <b>local <code>.streamlit/secrets.toml</code></b> ไปเป็น <b>Streamlit Community Cloud → Secrets</b> การแยก config ออกจากโค้ดแบบนี้ทำให้ key ไม่หลุดขึ้น GitHub</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">9</span> Checkpoint 2 + Troubleshooting <span class="chip w13">W13</span><span class="chip exam">★★</span></h2>
+<div class="callout warn"><div class="callout-title">⚠ เปิดหน้าเว็บได้ ≠ Deploy สมบูรณ์</div>
+<b>การที่แอปเปิดหน้าเว็บได้สำเร็จ ไม่ได้หมายความว่า Deployment สมบูรณ์</b> ถ้าแอป<b>เชื่อมต่อ Database ไม่ได้</b> หรือ<b>ส่วนสำคัญของระบบทำงานไม่ได้</b> ต้องทดสอบ <b>workflow หลักของ Helpdesk</b> ให้ครบบน cloud เช่น query ตาม date/category และโหลด training data</div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>อาการ / Error</th><th>สาเหตุที่เป็นไปได้</th><th>วิธีแก้</th></tr></thead>
+<tbody>
+<tr><td><code>ModuleNotFoundError: No module named 'supabase'</code></td><td>ไม่ได้ใส่ library ใน requirements.txt (หรือไฟล์ไม่ได้อยู่ข้าง main.py)</td><td>เพิ่มชื่อ package แล้ว commit ใหม่</td></tr>
+<tr><td><code>KeyError</code> ที่ <code>st.secrets["supabase_url"]</code></td><td>ไม่ได้วาง Secrets ใน Advanced settings หรือชื่อ key ไม่ตรง</td><td>วางค่าจาก secrets.toml ให้ชื่อตรง <code>supabase_url</code> / <code>supabase_key</code></td></tr>
+<tr><td><code>FileNotFoundError</code> หรือแอปฟ้อง “Cannot read data/…”</td><td>ไม่ได้ upload โฟลเดอร์ data/ หรือใช้ path แบบ hard-code ของเครื่องเรา</td><td>upload data/ และใช้ <code>Path(__file__).resolve().parent</code></td></tr>
+<tr><td><code>permission denied for table ...</code></td><td>role <code>anon</code> ไม่มีสิทธิ์ SELECT</td><td>รัน <code>GRANT SELECT ON TABLE ... TO anon;</code> (Lab 12)</td></tr>
+<tr><td>“Main module does not exist”</td><td>Entry point / branch ผิด</td><td>ตั้ง Main file path = <code>main.py</code>, branch = <code>main</code></td></tr>
+<tr><td>Local ทำงานแต่บน cloud error แปลก ๆ</td><td>cloud ติดตั้ง library เวอร์ชันต่างจากเครื่องเรา หรือ Python version ต่างกัน</td><td>pin เวอร์ชันใน requirements.txt และเลือก Python version ให้ตรง</td></tr>
+</tbody></table></div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> เห็น error แบบนี้ ต้องไปแก้ที่ไหน?</div>
+  <div class="sim-body"><div id="trbGame"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">10</span> อ่านโค้ด Lab 13 main.py (IT Fortune Cookie) <span class="chip w13">W13</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>แอปนี้เป็นแอปตลก (คำทำนายเป็นมุกที่คำนวณแบบ deterministic ไม่มี model หรือ API จริง) แต่โค้ดรวบรวมแนวคิดจาก W9–W11 ไว้ครบ และเขียนมาให้<b>รันได้ทั้งบน local และ cloud</b></p>
+
+<h3>1) Path และการโหลด CSV แบบ cache ที่ “รู้ตัว” เมื่อไฟล์เปลี่ยน</h3>
+<script type="text/plain" class="code" data-title="Lab 13 · main.py — Settings & CSV loading">
+APP_DIR = Path(__file__).resolve().parent      ##! (W9) ผูก path กับโฟลเดอร์ของ main.py จึงหา data/ เจอทั้งบน local และบน cloud server
+DATA_DIR = APP_DIR / "data"
+STUDENT_FILE = "students.csv"
+
+@st.cache_data(show_spinner=False)             ##! (W10) cache_data เพราะคืนค่าเป็น DataFrame (ข้อมูล) โหลดเร็วจึงปิด spinner
+def read_csv_file(path_string, modified_ns):   ##! `modified_ns` (เวลาแก้ไขไฟล์) เป็น **ส่วนหนึ่งของ cache key** แม้จะไม่ได้ใช้ในฟังก์ชันเลย
+    # modified_ns is deliberately part of the cache key, even though not read here.
+    return pd.read_csv(path_string, dtype=str, keep_default_na=False,
+                       encoding="utf-8-sig")   ##! อ่านทุกคอลัมน์เป็น str, ไม่แปลงช่องว่างเป็น NaN, `utf-8-sig` ตัด BOM หน้าไฟล์ (ไฟล์ CSV ภาษาไทยจาก Excel มักมี)
+
+def load_table(filename, required_columns, unique_column=None):
+    path = DATA_DIR / filename
+    try:
+        table = read_csv_file(str(path), path.stat().st_mtime_ns).copy()   ##! ส่ง mtime เข้าไป ถ้าไฟล์ถูกแก้ mtime จะเปลี่ยน → cache key ใหม่ → **cache miss อ่านไฟล์ใหม่อัตโนมัติ** (เทคนิค “version the input” จาก W10) ส่วน `.copy()` กันการแก้ไขข้อมูลที่ cache ไว้
+    except (OSError, UnicodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise ValueError(f"Cannot read data/{filename}. Place a nonempty UTF-8 CSV "
+                         "in the data folder beside main.py.") from exc   ##! ถ้าลืม upload data/ ขึ้น GitHub จะมาตกที่นี่ แล้วแปลงเป็นข้อความที่อ่านเข้าใจง่าย
+    table.columns = [str(col).strip().replace("-", "_") for col in table.columns]   ##! รองรับหัวคอลัมน์แบบ `student-id` → `student_id`
+    missing = set(required_columns) - set(table.columns)
+    if missing:
+        raise ValueError(f"{filename} is missing columns: {', '.join(sorted(missing))}.")   ##! validate ว่าคอลัมน์ครบ
+    if unique_column and table[unique_column].duplicated().any():
+        raise ValueError(f"{filename} must have unique {unique_column} values.")
+    return table
+</script>
+
+<h3>2) main(): จับ error ให้เป็นข้อความที่เป็นมิตร แล้วหยุด run</h3>
+<script type="text/plain" class="code" data-title="Lab 13 · main.py — main()">
+def main():
+    st.set_page_config(page_title="IT Fortune Cookie · The Oracle", page_icon="🥠", layout="wide")
+    initialize_state()                                       ##! เตรียม session state ก่อนใช้ (W11)
+    try:
+        students, teachers, subjects, pools = load_assets()  ##! โหลด CSV ทั้ง 4 ไฟล์ผ่าน load_table
+    except ValueError as exc:
+        st.title("🥠 The Oracle has misplaced a scroll")
+        st.error(str(exc))                                   ##! แสดงสาเหตุบนหน้าเว็บแทน traceback ยาว ๆ
+        st.info("Check students.csv, teacher.csv, subject.csv and fortunes.csv "
+                "inside the data folder beside main.py, then reload.")
+        st.stop()                                            ##! **หยุด script run นี้ทันที** บรรทัดถัดไปไม่ถูกรัน
+
+    day = datetime.now(THAILAND).date().isoformat()          ##! ใช้เวลาไทย (UTC+7) เพราะ cloud server อาจอยู่คนละ timezone
+    student_id = st.selectbox("Who dares to consult the Oracle?", list(students),
+                              format_func=lambda x: students[x]["student_name"],
+                              key="student_choice")          ##! แสดงชื่อ แต่คืนค่าเป็น student_id
+    key = (student_id, day)                                  ##! state แยก **ต่อนักศึกษา ต่อวัน** (tuple ใช้เป็น key ของ dict ได้)
+    count = st.session_state.consultations.get(key, 0)
+    fortune = st.session_state.daily_fortunes.get(key)
+    submitted, answers = questionnaire(student_id, day, teachers, subjects,
+                                       latest=fortune, locked=count >= MAX_CONSULTATIONS)   ##! คำถาม 6 ข้ออยู่ใน `st.form` จึงส่งค่าพร้อมกันตอนกดปุ่ม (W9)
+    if submitted:
+        consult_oracle(key, students[student_id]["student_name"], answers, teachers, subjects, pools)
+        st.rerun()                                           ##! สั่ง rerun ทันทีให้หน้าวาดใหม่ด้วย state ล่าสุด (นับครั้งและคำทำนายใหม่)
+
+if __name__ == "__main__":                                   ##! เรียก main() เมื่อไฟล์นี้ถูกรันเป็นโปรแกรมหลัก (ซึ่ง `streamlit run main.py` ก็ทำแบบนั้น)
+    main()
+</script>
+
+<h3>3) Session State ต่อนักศึกษาต่อวัน</h3>
+<script type="text/plain" class="code" data-title="Lab 13 · main.py — state">
+def initialize_state():
+    st.session_state.setdefault("consultations", {})     ##! `setdefault` = ถ้ายังไม่มี key ให้ตั้งค่าเริ่มต้น ถ้ามีแล้วไม่ทับ (เทียบเท่า `if "consultations" not in st.session_state:`)
+    st.session_state.setdefault("daily_fortunes", {})    ##! dict ซ้อน: key คือ `(student_id, day)` และ value คือคำทำนายล่าสุด
+
+def consult_oracle(key, student_name, answers, teachers, subjects, pools):
+    count = st.session_state.consultations.get(key, 0)   ##! ถามไปแล้วกี่ครั้ง (ยังไม่เคย = 0)
+    if count >= MAX_CONSULTATIONS:                       ##! จำกัด 13 ครั้งต่อวัน
+        return False
+    new_fortune = generate_fortune(key[0], student_name, answers, key[1], teachers, subjects, pools)
+    old_fortune = st.session_state.daily_fortunes.get(key)
+    if old_fortune is not None:
+        new_fortune["initial_luck"] = old_fortune["initial_luck"]   ##! คงค่า luck ตั้งต้นของครั้งแรกไว้ เปลี่ยนคำตอบใหม่ก็กู้ดวงคืนไม่ได้
+    st.session_state.daily_fortunes[key] = new_fortune   ##! เก็บผลไว้ใน session ให้อยู่รอดข้าม rerun
+    st.session_state.consultations[key] = count + 1
+    return True
+</script>
+<div class="callout tip"><div class="callout-title">🔗 เชื่อมกับ Week 11</div>
+caption ท้ายแอปเขียนว่า <i>“Consultations are remembered per student for this browser session, not across browsers or reconnects.”</i> ซึ่งก็คือ Session State นั่นเอง: <b>ผูกกับ browser session</b> ถ้าเปิดแท็บใหม่ เปลี่ยน browser หรือ reconnect ตัวนับจะเริ่มใหม่ เพราะ Session State <b>ไม่ใช่ permanent storage</b> (ถ้าอยากให้จำถาวรต้องใช้ database แบบ Lab 12)</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">11</span> สรุปเชื่อม Week 9–13 <span class="chip w13">W13</span></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>สัปดาห์</th><th>แนวคิด</th><th>สิ่งที่ต้องคิดตอน Deploy</th></tr></thead>
+<tbody>
+<tr><td><span class="chip w9">W9</span></td><td>Python รันบน server, path เป็นของ server</td><td>ต้อง upload ไฟล์ data/ และใช้ path ที่ผูกกับ main.py ส่วนเครื่องผู้ใช้ไม่เกี่ยว</td></tr>
+<tr><td><span class="chip w10">W10</span></td><td>Caching</td><td>cache อยู่ใน memory ของ cloud server และใช้ร่วมกันทุกผู้ใช้ ส่วน cache_resource เก็บ Supabase client ไว้ใช้ซ้ำ ใช้ mtime/ttl กันข้อมูลเก่า</td></tr>
+<tr><td><span class="chip w11">W11</span></td><td>Session State</td><td>แยกต่อ browser session ของผู้ใช้แต่ละคน จะหายเมื่อปิดแท็บหรือ reconnect</td></tr>
+<tr><td><span class="chip w12">W12</span></td><td>Supabase + secrets + GRANT</td><td>ใส่ Secrets บน cloud, ใช้ publishable key และให้ role anon มีสิทธิ์ที่ต้องใช้</td></tr>
+<tr><td><span class="chip w13">W13</span></td><td>Deploy</td><td>GitHub + requirements.txt + Secrets → Community Cloud → Public URL</td></tr>
+</tbody></table></div>
+
+<h3>การส่งงาน Lab 13</h3>
+<p>สร้างไฟล์ text ชื่อตามรหัสนักศึกษา เช่น <code>6607XXXX.txt</code> ที่มี <b>Public URL 2 รายการ</b> คือ (1) Part 1 Simple app และ (2) Part 2 Helpdesk app ทั้งสอง URL ต้องเปิดใช้งานได้ตอนตรวจ <b>ไม่ต้องส่ง source code หรือ GitHub repository</b> แล้วส่งผ่าน Google Classroom</p>
+
+<div class="callout exam"><div class="callout-title">★ สรุป 5 ข้อที่ต้องจำ</div>
+<ol style="margin:0">
+<li>Pipeline: <b>Local → GitHub → Streamlit Community Cloud → Public URL → Users</b></li>
+<li><b>requirements.txt</b> ใส่เฉพาะ external libraries (ไม่ใส่ standard library) และ pin เวอร์ชันเพื่อให้ cloud ทำงานเหมือน local</li>
+<li><b>ห้าม commit secrets.toml</b> ให้วางค่าใน <b>Advanced settings → Secrets</b> โดยโค้ดที่อ่าน <code>st.secrets</code> ไม่ต้องแก้</li>
+<li>ตั้ง <b>Repository / Branch / Entry point / App URL / Python version</b> ให้ถูก</li>
+<li><b>เปิดเว็บได้ ≠ deploy สมบูรณ์</b> ต้องทดสอบ workflow หลักรวมถึงการต่อ database</li>
+</ol></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">✎</span> แบบฝึกหัดท้ายบท Week 13 <span class="chip w13">W13</span></h2>
+<p class="muted">ข้อกาตรวจทันทีพร้อมเหตุผล ส่วนข้อเขียนให้ลองตอบก่อนแล้วค่อยกด “ดูแนวคำตอบ”</p>
+<div class="quiz-mount" data-week="w13"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปจากเอกสาร Lab 13 และโค้ดของวิชา 06016474 Applied AI for IT · Week 13</footer>
+
+<script src="assets/q-w13.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, sortGame, esc } = AAIT;
+
+  /* ---------- (1) clickable pipeline ---------- */
+  const STAGES = [
+    { name: "Local Application", what: "เขียนและทดสอบแอปบนเครื่องตัวเอง (<code>python -m streamlit run main.py</code>) ซึ่ง server และ browser อยู่เครื่องเดียวกัน",
+      need: "แอปที่รันได้จริง · <code>requirements.txt</code> · โฟลเดอร์ <code>data/</code> · (Helpdesk) <code>.streamlit/secrets.toml</code> สำหรับใช้บนเครื่อง",
+      fail: "แอปยังพังบน local · ลืมทดสอบ <code>pip install -r requirements.txt</code> ทำให้ไม่รู้ว่าไฟล์ขาด package" },
+    { name: "GitHub Repository", what: "เก็บ source code ที่ Community Cloud จะดึงไป deploy (Add file → Upload files → Commit changes)",
+      need: "main.py · requirements.txt · data/*.csv (Simple app) · training.py (Helpdesk) — <b>ไม่มี secrets.toml</b>",
+      fail: "ลืม upload data/ · ไฟล์อยู่ผิดโฟลเดอร์ · เผลอ commit secrets.toml (key หลุด)" },
+    { name: "Streamlit Community Cloud", what: "สร้าง environment ใหม่บน server: ติดตั้ง Python ตามเวอร์ชันที่เลือก แล้ว <code>pip install</code> ตาม requirements.txt จากนั้นสั่ง <code>streamlit run</code> ที่ entry point",
+      need: "Repository · Branch (main) · Entry point (main.py) · App URL · Advanced settings: Python version + Secrets",
+      fail: "<code>ModuleNotFoundError</code> (requirements ขาด) · <code>KeyError</code> จาก st.secrets (ไม่ได้วาง Secrets) · entry point ผิด · Python version ไม่เข้ากับ library" },
+    { name: "Public URL", what: "ได้ลิงก์ เช่น <code>https://lab13-app-simple-6607xxxx.streamlit.app</code> ที่ใครก็เปิดได้",
+      need: "custom subdomain ตามรูปแบบที่กำหนด (มีรหัสนักศึกษา)",
+      fail: "เปิดหน้าได้แต่ฟีเจอร์หลักพัง เช่นต่อ database ไม่ได้ ซึ่ง<b>ยังไม่ถือว่า deploy สมบูรณ์</b>" },
+    { name: "Users", what: "ผู้ใช้หลายคนเปิดผ่าน browser ของตัวเอง แต่ละแท็บเป็น session แยก (W9/W11) cache ใช้ร่วมกันบน server (W10)",
+      need: "แอปที่ทำงานครบ workflow บน cloud",
+      fail: "state หายเมื่อ reconnect (เป็นพฤติกรรมปกติของ Session State) · ข้อมูลเก่าเพราะ cache ยังไม่หมดอายุ (ใช้ ttl/clear)" },
+  ];
+  const pipe = $("#pipe");
+  STAGES.forEach((s, i) => {
+    if (i) pipe.insertAdjacentHTML("beforeend", `<div class="arrow">→</div>`);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<b>ขั้นที่ ${i + 1}</b>${s.name}`;
+    b.addEventListener("click", () => show(i));
+    pipe.appendChild(b);
+  });
+  function show(i) {
+    pipe.querySelectorAll("button").forEach((b, k) => b.classList.toggle("on", k === i));
+    const s = STAGES[i];
+    $("#pipeInfo").innerHTML = `<div style="font-weight:700;margin-bottom:6px">${i + 1}. ${s.name}</div>
+      <div><span class="label">เกิดอะไรขึ้น</span>${s.what}</div>
+      <div style="margin-top:8px"><span class="label">ต้องมี</span>${s.need}</div>
+      <div style="margin-top:8px"><span class="label" style="color:var(--bad)">พังได้เพราะ</span>${s.fail}</div>`;
+  }
+  show(0);
+
+  /* ---------- (2) upload to GitHub? ---------- */
+  const UP = {
+    simple: [
+      { text: "<code>main.py</code>", answer: 0, why: "source code หลัก และเป็น entry point" },
+      { text: "<code>requirements.txt</code>", answer: 0, why: "cloud ใช้ไฟล์นี้ติดตั้ง streamlit และ pandas" },
+      { text: "<code>data/students.csv</code>, <code>teacher.csv</code>, <code>subject.csv</code>, <code>fortunes.csv</code>", answer: 0, why: "แอปอ่าน CSV จาก data/ บน server ถ้าไม่ upload จะหาไฟล์ไม่เจอ" },
+      { text: "<code>__pycache__/</code>", answer: 1, why: "ไฟล์ bytecode ที่ Python สร้างอัตโนมัติ cloud สร้างเองได้" },
+      { text: "โฟลเดอร์ environment (<code>.venv/</code> หรือ conda env)", answer: 1, why: "cloud สร้าง environment เองจาก requirements.txt การอัปโหลด library ทั้งก้อนทั้งหนักและใช้ข้ามเครื่องไม่ได้" },
+      { text: "ไฟล์ notebook ของ Lab (<code>.ipynb</code>)", answer: 1, why: "เป็นเอกสารประกอบการเรียน แอปไม่ได้ใช้ จึงไม่จำเป็น" },
+    ],
+    helpdesk: [
+      { text: "<code>main.py</code>", answer: 0, why: "entry point ของ Helpdesk app" },
+      { text: "<code>training.py</code>", answer: 0, why: "main.py <code>from training import train_model, evaluate_model</code> ถ้าไม่มีจะ ImportError" },
+      { text: "<code>requirements.txt</code> (streamlit, pandas, scikit-learn, supabase)", answer: 0, why: "ต้องมี supabase และ scikit-learn ด้วย ไม่อย่างนั้นจะ ModuleNotFoundError" },
+      { text: "<code>.streamlit/secrets.toml</code>", answer: 1, why: "<b>ห้ามเด็ดขาด</b> มี URL/key ของ Supabase ให้ไปวางใน Advanced settings → Secrets แทน" },
+      { text: "<code>__pycache__/</code>", answer: 1, why: "ไฟล์ที่สร้างอัตโนมัติ ไม่จำเป็น" },
+      { text: "ไฟล์ notebook ของ Lab (<code>.ipynb</code>)", answer: 1, why: "slide กำหนดให้มีแค่ main.py, training.py และ requirements.txt" },
+    ],
+  };
+  const upGame = () => sortGame($("#upGame"), { options: ["อัปโหลด ✔", "ห้าม/ไม่ต้อง ✘"], items: UP[upMode] });
+  let upMode = "simple";
+  $("#upMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    upMode = b.dataset.m;
+    $("#upMode").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    upGame();
+  });
+  upGame();
+
+  /* ---------- (3) requirements.txt builder ---------- */
+  const IMPORTS = [
+    { line: "from datetime import datetime, timedelta, timezone", ext: false },
+    { line: "from hashlib import sha256", ext: false },
+    { line: "from pathlib import Path", ext: false },
+    { line: "from random import Random", ext: false },
+    { line: "import json", ext: false },
+    { line: "import re", ext: false },
+    { line: "import time", ext: false },
+    { line: "import pandas as pd", ext: true, pkg: "pandas<=2.2.3" },
+    { line: "import streamlit as st", ext: true, pkg: "streamlit<=1.50.0" },
+  ];
+  const picks = {};
+  function drawReq() {
+    const box = $("#reqRows");
+    box.innerHTML = "";
+    IMPORTS.forEach((im, i) => {
+      const row = document.createElement("div");
+      row.className = "req-row";
+      row.innerHTML = `<span class="imp">${esc(im.line)}</span><div class="seg"><button type="button" data-v="std">Standard library</button><button type="button" data-v="ext">External</button></div>`;
+      row.querySelector(".seg").addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b) return;
+        picks[i] = b.dataset.v;
+        row.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+        row.classList.remove("right", "wrong");
+      });
+      box.appendChild(row);
+    });
+    $("#reqOut").innerHTML = "";
+  }
+  $("#reqBuild").addEventListener("click", () => {
+    const rows = $("#reqRows").querySelectorAll(".req-row");
+    let wrong = 0, blank = 0;
+    IMPORTS.forEach((im, i) => {
+      if (!picks[i]) { blank++; return; }
+      const ok = (picks[i] === "ext") === im.ext;
+      if (!ok) wrong++;
+      rows[i].classList.toggle("right", ok);
+      rows[i].classList.toggle("wrong", !ok);
+    });
+    if (blank) { $("#reqOut").innerHTML = `<div class="status warn"><div class="t">ยังเลือกไม่ครบ ${blank} บรรทัด</div></div>`; return; }
+    const lines = IMPORTS.filter((im, i) => picks[i] === "ext").map((im) => im.pkg || im.line.split(" ")[1]);
+    const body = esc(lines.join("\n") || "(ว่าง)");
+    $("#reqOut").innerHTML = wrong
+      ? `<div class="status bad"><div class="t">ผิด ${wrong} บรรทัด (สีแดง)</div>ลองแก้ใหม่: standard library มากับ Python อยู่แล้ว ส่วน external คือที่ต้อง pip install<pre>${body}</pre></div>`
+      : `<div class="status ok"><div class="t">ถูกต้องทั้งหมด ✓ ได้ requirements.txt ดังนี้</div><pre>${body}</pre>บันทึกไฟล์นี้ไว้ข้าง main.py แล้ว upload ขึ้น GitHub ด้วย</div>`;
+  });
+  $("#reqReset").addEventListener("click", () => { Object.keys(picks).forEach((k) => delete picks[k]); drawReq(); });
+  drawReq();
+
+  /* ---------- (4) mock deploy form ---------- */
+  const val = (id) => $(id).value.trim();
+  $("#dpRepo").addEventListener("change", () => {
+    const helpdesk = val("#dpRepo") === "lab13-helpdesk";
+    $("#dpUrl").value = helpdesk ? "lab13-helpdesk-6607xxxx" : "lab13-app-simple-6607xxxx";
+    $("#dpPy").value = helpdesk ? "3.12" : "3.13";
+  });
+  $("#dpFillOk").addEventListener("click", () => {
+    const helpdesk = val("#dpRepo") === "lab13-helpdesk";
+    $("#dpBranch").value = "main";
+    $("#dpEntry").value = "main.py";
+    $("#dpPy").value = helpdesk ? "3.12" : "3.13";
+    $("#dpReq").querySelectorAll("input").forEach((c) => (c.checked = helpdesk || ["streamlit", "pandas"].includes(c.value)));
+    $("#dpData").checked = !helpdesk;
+    $("#dpTraining").checked = helpdesk;
+    $("#dpSecretFile").checked = false;
+    $("#dpGrant").checked = true;
+    $("#dpSecrets").value = helpdesk ? 'supabase_url = "https://xxxxxxxxxxxx.supabase.co"\nsupabase_key = "sb_publishable_xxxxxxxx"' : "";
+  });
+  function status(kind, title, body) {
+    $("#dpStatus").className = "status " + kind;
+    $("#dpStatus").innerHTML = `<div class="t">${title}</div>${body}`;
+  }
+  $("#dpGo").addEventListener("click", () => {
+    const repo = val("#dpRepo"), helpdesk = repo === "lab13-helpdesk";
+    const req = new Set([...$("#dpReq").querySelectorAll("input:checked")].map((c) => c.value));
+    const sub = val("#dpUrl"), secrets = $("#dpSecrets").value;
+    status("", '<span class="spinner"></span> Your app is in the oven...', "กำลังติดตั้ง Python และ requirements.txt ...");
+    setTimeout(() => {
+      if (val("#dpBranch") !== "main") return status("bad", "✗ Deploy ไม่ได้", `<pre>Branch "master" does not exist in ${esc(repo)}</pre>repo นี้สร้างด้วย branch <code>main</code> ให้เลือก branch ให้ถูก`);
+      if (val("#dpEntry") !== "main.py") return status("bad", "✗ หา entry point ไม่เจอ", `<pre>The main module file does not exist: /mount/src/${esc(repo)}/${esc(val("#dpEntry"))}</pre>Main file path ต้องตรงกับชื่อไฟล์ใน repo คือ <code>main.py</code>`);
+      if (!/^[a-z0-9-]+$/.test(sub)) return status("bad", "✗ App URL ไม่ถูกต้อง", "subdomain ใช้ได้แค่ a-z, 0-9 และ - เช่น <code>lab13-app-simple-6607xxxx</code>");
+      if (!req.has("pandas")) return status("bad", "✗ App error ตอนรัน", `<pre>ModuleNotFoundError: No module named 'pandas'</pre>cloud ไม่ได้ติดตั้ง pandas เพราะไม่มีใน requirements.txt ให้เพิ่ม <code>pandas&lt;=2.2.3</code> แล้ว commit`);
+      if (helpdesk && !req.has("supabase")) return status("bad", "✗ App error ตอนรัน", `<pre>ModuleNotFoundError: No module named 'supabase'</pre>ให้เพิ่ม <code>supabase</code> ใน requirements.txt`);
+      if (helpdesk && !$("#dpTraining").checked) return status("bad", "✗ App error ตอนรัน", `<pre>ModuleNotFoundError: No module named 'training'</pre>main.py import จาก training.py จึงต้อง upload ไฟล์นี้ด้วย`);
+      if (helpdesk && !req.has("scikit-learn")) return status("bad", "✗ App error ตอนรัน", `<pre>ModuleNotFoundError: No module named 'sklearn'</pre>training.py ใช้ scikit-learn (import ชื่อ sklearn) ให้เพิ่ม <code>scikit-learn</code> ใน requirements.txt`);
+      const extra = [];
+      if (!req.has("streamlit")) extra.push("ไม่ได้ระบุ streamlit: Community Cloud ติดตั้ง streamlit ให้อยู่แล้ว แต่เวอร์ชันอาจไม่ตรงกับ local จึงควรใส่และ pin เวอร์ชันไว้");
+      if ($("#dpSecretFile").checked) extra.push("<b>อันตราย:</b> secrets.toml อยู่ใน repo แปลว่า key หลุดสู่สาธารณะแล้ว ต้องลบออกจาก repo และควรเปลี่ยน key ใหม่");
+      if (!helpdesk) {
+        if (!$("#dpData").checked) return status("bad", "✗ แอปเปิดได้ แต่ขึ้นหน้า error ของแอป", `<pre>🥠 The Oracle has misplaced a scroll\nCannot read data/students.csv. Place a nonempty UTF-8 CSV in the data folder beside main.py.</pre>ลืม upload โฟลเดอร์ <code>data/</code> ทำให้ <code>load_table</code> จับ error แล้ว <code>st.error</code> + <code>st.stop()</code>`);
+        return status(extra.length ? "warn" : "ok", "✓ Your app is live!", `<a href="#" onclick="return false">https://${esc(sub)}.streamlit.app</a><br>ลองเลือกชื่อ ตอบคำถาม และ Reveal My Destiny ให้ทำงานเหมือนบน local${extra.length ? "<ul><li>" + extra.join("</li><li>") + "</li></ul>" : ""}`);
+      }
+      if (!/supabase_url\s*=/.test(secrets) || !/supabase_key\s*=/.test(secrets))
+        return status("bad", "✗ หน้าเว็บขึ้น error ตอนเชื่อม database", `<pre>KeyError: 'st.secrets has no key "${/supabase_url\s*=/.test(secrets) ? "supabase_key" : "supabase_url"}".'</pre>ยังไม่ได้วาง Secrets ใน Advanced settings (หรือชื่อ key ไม่ตรง) ให้คัดลอกเนื้อหา <code>.streamlit/secrets.toml</code> มาวาง`);
+      if (!/\.supabase\.co/.test(secrets)) return status("bad", "✗ เชื่อม Supabase ไม่ได้", "<pre>Invalid URL / Invalid path specified</pre>supabase_url ต้องเป็น Project URL ที่ลงท้าย <code>.supabase.co</code>");
+      if (/sb_secret_|service_role/i.test(secrets)) extra.push("ใช้ Secret/Service Role key: ใช้ได้แต่ข้าม RLS และมีสิทธิ์สูงเกินจำเป็น Lab ให้ใช้ <b>publishable key</b>");
+      if (!$("#dpGrant").checked) return status("bad", "✗ เปิดหน้าได้ แต่ query ไม่ผ่าน", `<pre>APIError: permission denied for table helpdesk_tickets</pre>หน้าเว็บเปิดได้แต่ <b>ยังไม่ถือว่า deploy สมบูรณ์</b> ให้รัน <code>GRANT SELECT ON TABLE public.helpdesk_tickets, public.helpdesk_validation TO anon;</code>`);
+      status(extra.length ? "warn" : "ok", "✓ Your app is live!", `<a href="#" onclick="return false">https://${esc(sub)}.streamlit.app</a><br>อย่าลืมทดสอบ workflow หลัก: เลือกวันที่/category, query และโหลดข้อมูลจาก Supabase${extra.length ? "<ul><li>" + extra.join("</li><li>") + "</li></ul>" : ""}`);
+    }, 700);
+  });
+
+  /* ---------- (5) troubleshooting ---------- */
+  sortGame($("#trbGame"), {
+    options: ["requirements.txt", "Secrets", "ไฟล์ / Path", "สิทธิ์ Database"],
+    items: [
+      { text: "<code>ModuleNotFoundError: No module named 'supabase'</code>", answer: 0, why: "cloud ไม่ได้ติดตั้ง package นี้ ให้เพิ่มลง requirements.txt" },
+      { text: "<code>KeyError: 'st.secrets has no key \"supabase_url\"'</code>", answer: 1, why: "ยังไม่ได้วางค่าใน Advanced settings → Secrets หรือชื่อ key ไม่ตรง" },
+      { text: "แอปขึ้น “Cannot read data/students.csv…”", answer: 2, why: "ลืม upload โฟลเดอร์ data/ ขึ้น GitHub (path เป็นของ server)" },
+      { text: "<code>permission denied for table helpdesk_tickets</code>", answer: 3, why: "role anon ไม่มีสิทธิ์ SELECT ต้อง GRANT ตาม Lab 12" },
+      { text: "“The main module file does not exist: …/app.py”", answer: 2, why: "Entry point (Main file path) ผิด ต้องเป็น main.py" },
+      { text: "บน local ปกติ แต่บน cloud ฟังก์ชันของ library ทำงานต่างไป หลัง library ออกเวอร์ชันใหม่", answer: 0, why: "ไม่ได้ pin เวอร์ชัน cloud จึงติดตั้งตัวใหม่กว่า ให้ใช้ <code>&lt;=</code> หรือ <code>==</code>" },
+      { text: "<code>Invalid path specified in request URL</code> ตอนเชื่อม Supabase", answer: 1, why: "supabase_url ใน Secrets ไม่ใช่ Project URL (ต้องลงท้าย .supabase.co)" },
+    ],
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 11 · Session State</title>
+<meta name="description" content="สรุป Week 11: Session State, Widget keys, Callbacks, Common errors และ Lab 11 Stateful Helpdesk">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .tabs-sim { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .shared-badge { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border: 2px dashed color-mix(in srgb, var(--w10) 55%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--w10) 8%, var(--surface)); margin-bottom: 12px; font-size: 14.5px; }
+  .phase { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .phase span { font-size: 13px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
+  .phase span.on { background: var(--wk); color: #fff; border-color: var(--wk); font-weight: 600; }
+  .bug-case { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; background: var(--surface); }
+  .bug-case h4 { margin: 0 0 6px; }
+  .errbox { font-family: var(--mono); font-size: 13px; background: var(--bad-bg); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 40%, var(--border)); border-radius: 8px; padding: 9px 12px; white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
+  .warnbox { font-family: var(--mono); font-size: 13px; background: var(--warn-bg); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border)); border-radius: 8px; padding: 9px 12px; white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
+  .ds-grid label { display: block; font-size: 13.5px; color: var(--text-2); }
+  .hist-table td, .hist-table th { font-size: 13px; padding: 6px 8px; }
+  .hist-table tr.best td { background: var(--ok-bg); }
+</style>
+</head>
+<body class="w11" data-page="w11">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">● Week 11 · Lab 11</span>
+  <h1>Session State &amp; Stateful Interaction<br><span class="muted" style="font-size:.6em;font-weight:500">Keep user-specific memory across reruns</span></h1>
+  <p class="lead">Week 9 สอนว่า Streamlit <b>rerun ทั้งไฟล์</b> ทุกครั้งที่ผู้ใช้โต้ตอบ ทำให้ตัวแปรธรรมดาหายทุกรอบ สัปดาห์นี้เราจะใช้ <code>st.session_state</code> เป็น “หน่วยความจำของ session” เพื่อจำค่าข้าม rerun ได้ พร้อมเรียน widget keys, callbacks และกับดัก (caveats) ที่มักออกสอบ</p>
+  <div class="meta"><span class="chip w11">Week 11</span><span class="chip">Workflow memory · Widget keys · Callbacks · Caveats</span><span class="chip exam">★ = ออกสอบบ่อย</span></div>
+</section>
+
+<div class="callout key">
+  <div class="callout-title">🧭 เส้นทางการเรียนสัปดาห์นี้ (State only after you understand reruns)</div>
+  <ol style="margin:0">
+    <li><b>Problem</b>: ตัวแปรธรรมดาถูก reset ทุก rerun</li>
+    <li><b>State model</b>: Session State เก็บข้อมูลแบบ <b>key–value</b> สำหรับ <b>1 browser session</b></li>
+    <li><b>Interaction</b>: ใช้ widgets และ callbacks อัปเดต state <b>อย่างตั้งใจ</b></li>
+  </ol>
+  <p style="margin:8px 0 0"><b>Key point:</b> Caching <i>reuses expensive work</i> ส่วน Session State <i>remembers user-specific workflow data</i></p>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">1</span> Session คืออะไร: 1 browser tab = 1 session <span class="chip w11">W11</span><span class="chip exam">★</span></h2>
+<p><b>Session</b> คือ <b>การเชื่อมต่อที่ active หนึ่งการเชื่อมต่อ</b> ระหว่างแท็บ browser ของผู้ใช้กับแอป Streamlit (ผ่าน WebSocket ที่เรียนใน Week 9)</p>
+<div class="diagram">
+  <div style="display:grid;grid-template-columns:repeat(5,minmax(90px,1fr));gap:10px;min-width:560px;font-size:13.5px;text-align:center">
+    <div class="panel"><b>User A</b><br>Tab A<br><span class="pill">Session 1</span></div>
+    <div class="panel"><b>User A</b><br>Tab B<br><span class="pill">Session 2</span></div>
+    <div class="panel"><b>User B</b><br><span class="pill">Session 3</span></div>
+    <div class="panel"><b>User C</b><br><span class="pill">Session 4</span></div>
+    <div class="panel"><b>User D</b><br><span class="pill">Session 5</span></div>
+    <div class="panel" style="grid-column:1/-1;border:2px solid var(--wk)"><b>Streamlit app (shared)</b> — แอปเดียวใช้ร่วมกัน แต่แต่ละ session มี interaction context ของตัวเอง</div>
+  </div>
+</div>
+<div class="callout key"><div class="callout-title">💡 สาระสำคัญ</div>
+<ul style="margin:0">
+<li>ผู้ใช้คนเดียวเปิด 2 แท็บ = <b>2 sessions</b> (state แยกกัน)</li>
+<li>Application ใช้ร่วมกัน แต่ <b>แต่ละ browser session มี interaction context ของตัวเอง</b></li>
+<li><b>Session State ทำให้ค่าอยู่รอดข้าม rerun ได้ ภายใน session เดียว</b></li>
+</ul></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">2</span> ปัญหา: Rerun reset ตัวแปรธรรมดา <span class="chip w11">W11</span><span class="chip exam">★★</span></h2>
+<p>ทบทวนจาก Week 9–10: Streamlit รันไฟล์ Python <b>จากบนลงล่างทุกครั้งที่ผู้ใช้โต้ตอบ</b> ตัวแปรจึง<b>มีชีวิตแค่ 1 script run</b></p>
+<script type="text/plain" class="code" data-title="main.py — Without session state">
+import streamlit as st
+st.title("Session example")
+st.subheader("Without session state")
+count = 0                                  ##! บรรทัดนี้ถูกรัน **ทุก rerun** → count กลับเป็น 0 ทุกครั้ง
+if st.button("Add 1", key='btn_1'):        ##! คลิกปุ่ม → rerun → ปุ่มเป็น True ในรอบนี้
+    count += 1                             ##! 0 + 1 = 1 (แต่รอบหน้าจะเริ่มจาก 0 ใหม่)
+st.write("Count:", count)                  ##! จึงเห็น **1 เสมอ** ไม่ว่าจะกดกี่ครั้ง
+</script>
+<div class="flow">
+  <div class="step"><b>Run #1</b>count = 0</div><div class="arrow">→</div>
+  <div class="step"><b>Click Add 1</b>count = 1</div><div class="arrow">→</div>
+  <div class="step"><b>Script rerun</b>count = 0 อีกแล้ว</div><div class="arrow">→</div>
+  <div class="step"><b>Run #2</b>count = 0 → 1</div>
+</div>
+<p><b>ทุกคลิกเริ่มจาก 0 ใหม่ ค่าที่เห็นจึงเป็น 1 เสมอ</b> → ใช้ Session State เมื่อข้อมูลเฉพาะของผู้ใช้ต้องอยู่รอดไปถึง rerun ถัดไป</p>
+
+<h3>Minimal counter: With Session State</h3>
+<script type="text/plain" class="code" data-title="counter_state.py">
+import streamlit as st
+st.title("Counter")
+if "count" not in st.session_state:        ##! **Initialize once**: สร้าง key เฉพาะตอนที่ยังไม่มี (รอบแรกของ session เท่านั้น)
+    st.session_state.count = 0             ##! rerun รอบถัดไปเงื่อนไขเป็น False → ไม่เขียนทับค่าเดิม
+if st.button("Add 1", key='btn_1'):
+    st.session_state.count += 1            ##! อัปเดตค่าที่เก็บไว้นอก script run จึงสะสมได้ 1, 2, 3, ...
+st.write("Count =", st.session_state.count)   ##! อ่านค่าปัจจุบันจาก session memory
+</script>
+<p><b>Key point:</b> Initialize ครั้งเดียว จากนั้น<b>อ่านและอัปเดตผ่าน <code>st.session_state</code></b> เท่านั้น</p>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> กด “Add 1” ทั้งสองฝั่ง แล้วเทียบผล</div>
+  <div class="sim-body">
+    <div class="grid c2">
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>Without session state</span></div><div class="content">
+        <button class="btn primary" id="c1Btn" type="button">Add 1</button>
+        <div class="out" style="margin-top:10px">Count: <b id="c1Val">0</b></div>
+        <div class="out log small" id="c1Log" style="margin-top:8px"></div>
+      </div></div>
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>With st.session_state</span></div><div class="content">
+        <button class="btn primary" id="c2Btn" type="button">Add 1</button>
+        <div class="out" style="margin-top:10px">Count = <b id="c2Val">0</b></div>
+        <div class="out log small" id="c2Log" style="margin-top:8px"></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">3</span> ทำไมต้องมี Session State <span class="chip w11">W11</span></h2>
+<p>ข้อมูลบางอย่างเป็น<b>ส่วนหนึ่งของ workflow ของผู้ใช้</b> ต้องจำไว้ข้าม rerun</p>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Chat / message history</span>เก็บบทสนทนาก่อนหน้า เพื่อให้การโต้ตอบครั้งถัดไปมี <b>context</b></div>
+  <div class="card"><span class="label">B · Multi-step progress</span>จำ <b>step ปัจจุบัน</b> คำตอบ และผลลัพธ์บางส่วน (partial results)</div>
+  <div class="card"><span class="label">C · Temporary user choices</span>จำ filters, item ที่เลือก หรือ draft ของ form สำหรับ session นี้</div>
+</div>
+<div class="flow"><div class="step">Every rerun</div><div class="arrow">→</div><div class="step">Same user</div><div class="arrow">→</div><div class="step">Need memory</div><div class="arrow">→</div><div class="step"><b>Session State</b></div></div>
+<div class="callout exam"><div class="callout-title">★ จุดออกสอบ</div>
+Session State มีไว้สำหรับ <b>stateful interaction</b> <u>ไม่ใช่</u>เพื่อเร่งความเร็วการคำนวณที่หนัก (อันนั้นคือ caching ของ Week 10)</div>
+
+<h3>Sessions ถูกแยกกัน (isolated) แม้อยู่บน server เดียวกัน</h3>
+<div class="diagram">
+<svg viewBox="0 0 760 220" width="760" role="img" aria-label="สองแท็บ แต่ละแท็บมี session state ของตัวเองบน server เดียว">
+  <rect class="box" x="10" y="30" width="170" height="60" rx="10"/><text x="95" y="66" text-anchor="middle" font-size="15" font-weight="700">Browser tab A</text>
+  <rect class="box" x="10" y="130" width="170" height="60" rx="10"/><text x="95" y="166" text-anchor="middle" font-size="15" font-weight="700">Browser tab B</text>
+  <rect class="box-wk" x="260" y="15" width="490" height="190" rx="12"/>
+  <text x="505" y="40" text-anchor="middle" font-size="15" font-weight="700">Streamlit server · Python backend (shared)</text>
+  <rect class="box" x="300" y="55" width="190" height="55" rx="8"/><text x="395" y="80" text-anchor="middle" font-size="13.5">Session A</text><text x="395" y="100" text-anchor="middle" font-size="12.5" class="muted-t">st.session_state (A)</text>
+  <rect class="box" x="300" y="135" width="190" height="55" rx="8"/><text x="395" y="160" text-anchor="middle" font-size="13.5">Session B</text><text x="395" y="180" text-anchor="middle" font-size="12.5" class="muted-t">st.session_state (B)</text>
+  <rect class="box" x="540" y="85" width="180" height="70" rx="8"/><text x="630" y="113" text-anchor="middle" font-size="13.5">Cache (W10)</text><text x="630" y="135" text-anchor="middle" font-size="12.5" class="muted-t">ใช้ร่วมกันทุก session</text>
+  <path class="line-wk" d="M180 60 H300" stroke-width="2.2"/><path class="line-wk" d="M180 160 H300" stroke-width="2.2"/>
+  <path class="line" d="M490 82 L540 112" stroke-width="1.6" stroke-dasharray="4 3"/><path class="line" d="M490 162 L540 130" stroke-width="1.6" stroke-dasharray="4 3"/>
+</svg>
+</div>
+<p>แต่ละแท็บมี <b>connection แยก และ state แยก</b> — <b>server application ใช้ร่วมกัน แต่ session memory ไม่ได้ใช้ร่วม</b> การเปิดแท็บที่สองจึงสร้าง state context ใหม่</p>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> สองแท็บ: State แยกกัน แต่ Cache ใช้ร่วม</div>
+  <div class="sim-body">
+    <p class="howto">กดปุ่มในแต่ละแท็บ แล้วลอง “Reload แท็บ” (เหมือนปิด/เปิดใหม่) ดูว่าอะไรหาย อะไรยังอยู่</p>
+    <div class="shared-badge"><b>🧠 @st.cache_resource load_model()</b><span id="tsModel">ยังไม่ถูกเรียก</span><span class="muted small" id="tsCalls">body รันไปแล้ว 0 ครั้ง</span></div>
+    <div class="tabs-sim" id="tabsSim"></div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">4</span> Session State vs Cache <span class="chip w11">W11</span><span class="chip exam">★★★</span></h2>
+<p>ทั้งสองอย่างเกิดจากปัญหา rerun เหมือนกัน แต่<b>แก้ปัญหาคนละแบบ</b></p>
+<div class="table-wrap"><table>
+<thead><tr><th>มิติ</th><th>Session State (W11)</th><th>Cache (W10)</th></tr></thead>
+<tbody>
+<tr><td><b>Scope</b> (ใครเห็น)</td><td><b>1 browser session</b> เท่านั้น ผู้ใช้หรือแท็บอื่นไม่เห็น</td><td><b>ใช้ร่วมกันทุก session</b> บน app/server เดียวกัน</td></tr>
+<tr><td><b>Purpose</b> (ไว้ทำอะไร)</td><td>จำค่า <b>เฉพาะผู้ใช้ที่เปลี่ยนไปเรื่อย ๆ</b></td><td><b>Reuse งานหนักที่ผลคงที่</b> (expensive, stable work)</td></tr>
+<tr><td><b>Lifetime</b> (อยู่นานแค่ไหน)</td><td>หายเมื่อ <b>session จบหรือถูก reset</b></td><td>อยู่จนถูก <b>clear, หมดอายุ (ttl) หรือ invalidated</b></td></tr>
+<tr><td>ตัวอย่าง</td><td>chat history, step ปัจจุบัน, filter ที่เลือก</td><td>DataFrame จาก CSV, ML model, DB connection</td></tr>
+</tbody></table></div>
+<div class="callout exam"><div class="callout-title">★ ประโยคจำ</div>
+Session State = <b>“my current workflow”</b> · Cache = <b>“expensive work we can reuse”</b><br>
+Caching ตอบคำถาม “<i>reuse previous work?</i>” ส่วน Session State ตอบ “<i>remember this user's workflow?</i>”</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">5</span> Initialization pattern &amp; Read / Update / Delete <span class="chip w11">W11</span><span class="chip exam">★</span></h2>
+<p><code>st.session_state</code> เป็น object <b>คล้าย dictionary</b> เขียนได้ 2 แบบที่ให้ผลเหมือนกัน</p>
+<div class="compare">
+  <div class="a"><span class="label">Dictionary-like syntax</span>
+<script type="text/plain" class="code">
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+if "count" not in st.session_state:
+    st.session_state["count"] = 0
+# st.session_state["key"] = value
+</script></div>
+  <div class="a"><span class="label">Attribute syntax</span>
+<script type="text/plain" class="code">
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "count" not in st.session_state:
+    st.session_state.count = 0
+# st.session_state.key = value
+</script></div>
+</div>
+<div class="callout key"><div class="callout-title">💡 ทำไมต้องมี <code>if "key" not in st.session_state</code></div>
+key ต้อง <b>unique</b> และการเช็กนี้ <b>ป้องกันไม่ให้แอป initialize ค่าใหม่ทุก rerun</b> ถ้าเขียน <code>st.session_state.count = 0</code> เฉย ๆ ค่าจะถูกเขียนทับเป็น 0 ทุกรอบ เหมือนตัวแปรธรรมดา</div>
+
+<div class="grid c3">
+  <div class="card"><span class="label">A · Read</span>ใช้ key อ่านค่าปัจจุบัน
+<script type="text/plain" class="code">
+st.write(st.session_state["count"])
+st.write(st.session_state.count)
+</script></div>
+  <div class="card"><span class="label">B · Update</span>กำหนดค่าใหม่ หรือแก้ object ที่เก็บไว้
+<script type="text/plain" class="code">
+st.session_state["count"] += 1
+st.session_state.name = "Ada"
+</script></div>
+  <div class="card"><span class="label">C · Delete</span>ลบ key เดียว หรือล้างหลาย key
+<script type="text/plain" class="code">
+del st.session_state["count"]
+for key in list(st.session_state.keys()):
+    del st.session_state[key]
+</script></div>
+</div>
+<p class="small"><b>ทำไมต้อง <code>list(...keys())</code>?</b> เพราะเราลบ key ระหว่างวน loop ถ้าวนบน keys ตรง ๆ แล้วลบไปด้วยจะ error (dictionary changed size during iteration) จึง copy เป็น list ก่อน · <b>Dictionary syntax</b> มักชัดกว่าตอน loop, delete หรือ inspect keys</p>
+<div class="callout tip"><div class="callout-title">🛠 อีกวิธี (ใช้ใน Lab 13 · IT Fortune Cookie)</div>
+<script type="text/plain" class="code" data-title="Lab 13 · main.py">
+def initialize_state():
+    st.session_state.setdefault("consultations", {})     ##! `setdefault(key, default)`: ถ้ายังไม่มี key จะตั้งค่า default ให้ ถ้ามีแล้วจะไม่ทำอะไร = ผลเดียวกับ `if key not in ...`
+    st.session_state.setdefault("daily_fortunes", {})
+</script></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">6</span> Stateful list: เมื่อผู้ใช้แก้ข้อมูลไปเรื่อย ๆ <span class="chip w11">W11</span></h2>
+<div class="compare">
+  <div class="bad"><span class="label">❌ ใช้ตัวแปรธรรมดา</span>
+<script type="text/plain" class="code" data-title="append_list.py">
+import streamlit as st
+numbers = [1, 2, 3]                  ##! สร้าง list ใหม่ทุก rerun
+new_value = st.number_input("Number", value=99)
+if st.button("Append"):
+    numbers.append(new_value)        ##! เพิ่มได้แค่ในรอบนี้ รอบหน้ากลับเป็น [1, 2, 3]
+st.write(numbers)
+</script>
+  <p class="small">ทุกการโต้ตอบทำให้ rerun <b>การเปลี่ยนแปลงของตัวแปรธรรมดาจึงหายในรอบถัดไป</b></p></div>
+  <div class="good"><span class="label">✅ ใช้ Session State</span>
+<script type="text/plain" class="code" data-title="append_list.py">
+import streamlit as st
+if "numbers" not in st.session_state:
+    st.session_state.numbers = [1, 2, 3]       ##! สร้างครั้งเดียวตอนเริ่ม session
+new_value = st.number_input("Number", value=99)
+if st.button("Append"):
+    st.session_state.numbers.append(new_value) ##! แก้ list ที่เก็บใน state → อยู่รอดข้าม rerun
+if st.button("Reset"):
+    st.session_state.numbers = [1, 2, 3]       ##! กำหนดค่าใหม่ทั้งก้อน = reset
+st.write(st.session_state.numbers)
+</script>
+  <p class="small">Run #1 <code>[1,2,3]</code> → กด Append → <code>[1,2,3,99]</code> → rerun แล้วยังเป็น <code>[1,2,3,99]</code></p></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">7</span> Widget keys: widget เขียนค่าลง Session State เอง <span class="chip w11">W11</span><span class="chip exam">★★</span></h2>
+<script type="text/plain" class="code" data-title="widget_key.py">
+import streamlit as st
+st.text_input("Your name", key="name")      ##! ใส่ `key="name"` → ค่าของ widget นี้ถูกเก็บใน `st.session_state["name"]` อัตโนมัติ
+st.slider("Level", 1, 10, key="level")      ##! slider ค่าอยู่ที่ `st.session_state["level"]`
+st.write(st.session_state["name"])          ##! อ่านค่า widget ผ่าน session state ได้ แม้ไม่ได้เก็บ return value ใส่ตัวแปร
+st.write(st.session_state["level"])
+</script>
+<p><b>return value ของ widget กับค่าใน Session State คือค่าเดียวกัน</b> (ค่า widget ปัจจุบันของ session นี้) ใช้ key ที่ unique เมื่อ widget ต้องการ <b>persistent หรือ programmatic access</b> เช่น อ่านค่าใน callback หรือตั้งค่า widget จากโค้ด</p>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Keyed widget ↔ st.session_state (live)</div>
+  <div class="sim-body">
+    <p class="howto">พิมพ์ชื่อหรือเลื่อน slider แล้วดู dictionary ด้านขวาเปลี่ยนตาม ปุ่มด้านล่างจำลองการตั้งค่าผ่าน callback (ทำได้เพราะ callback รัน<b>ก่อน</b>สร้าง widget ในรอบถัดไป)</p>
+    <div class="grid c2">
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>widget_key.py</span></div><div class="content">
+        <div class="small muted">Your name <span class="pill">key="name"</span></div><input type="text" id="kwName" value="" placeholder="พิมพ์ชื่อ" style="width:100%">
+        <div class="small muted" style="margin-top:8px">Level <span class="pill">key="level"</span> = <b id="kwLv">1</b></div><input type="range" id="kwLevel" min="1" max="10" value="1" style="width:100%">
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="kwMax" type="button">on_click: st.session_state.level = 10</button><button class="btn sm" id="kwClear" type="button">on_click: st.session_state.name = ""</button></div>
+      </div></div>
+      <div class="panel"><span class="label">st.session_state</span><div class="out" id="kwState"></div><span class="label" style="margin-top:8px">st.write(st.session_state["name"])</span><div class="out" id="kwWrite"></div></div>
+    </div>
+  </div>
+</div>
+
+<h3>Widget initial values: initialize <u>ก่อน</u> สร้าง widget ★★</h3>
+<div class="compare">
+  <div class="good"><span class="label">✅ good_default.py</span>
+<script type="text/plain" class="code">
+if "celsius" not in st.session_state:
+    st.session_state.celsius = 50.0    ##! 1. Initialize state ก่อน
+st.slider(
+    "Temperature in Celsius",
+    min_value=-100.0,
+    max_value=100.0,
+    key="celsius",                     ##! 2. สร้าง widget ด้วย key เดียวกัน ไม่ต้องใส่ `value=` ซ้ำ
+)
+st.write(st.session_state.celsius)     ##! 3. อ่านค่าปัจจุบันจาก session state
+</script>
+  <p class="small">หลีกเลี่ยงการใส่ default แยกใน widget ถ้า state ควบคุมค่าอยู่แล้ว</p></div>
+  <div class="bad"><span class="label">❌ bad_default.py</span>
+<script type="text/plain" class="code">
+st.slider(
+    "Temperature in Celsius",
+    min_value=-100.0,
+    max_value=100.0,
+    key="celsius"
+)
+st.session_state.celsius = 50.0        ##! ตั้งค่า **หลัง** สร้าง widget ที่มี key เดียวกัน → error!
+st.write(st.session_state.celsius)
+</script>
+  <div class="errbox">streamlit.errors.StreamlitAPIException: st.session_state.celsius cannot be modified after the widget with key celsius is instantiated.</div></div>
+</div>
+<p><b>Key point:</b> State ต้องถูกตั้ง<b>ก่อน</b>คำสั่ง widget ที่ใช้ key เดียวกัน</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">8</span> Callbacks: ฟังก์ชันที่รันก่อน rerun <span class="chip w11">W11</span><span class="chip exam">★★★</span></h2>
+<div class="flow">
+  <div class="step"><b>1</b>ผู้ใช้เปลี่ยน/คลิก widget</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Callback รัน</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>State อัปเดต (total += 1)</div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Script rerun บน→ล่าง</div>
+</div>
+<script type="text/plain" class="code" data-title="callback setup">
+def update_total():
+    st.session_state.total += 1          ##! callback = ฟังก์ชันธรรมดาที่แก้ session state
+st.button("Add", on_click=update_total)  ##! ผูก callback กับปุ่ม: คลิกแล้ว Streamlit เรียก `update_total` **ก่อน** rerun
+</script>
+<p><b>Order matters:</b> callback ทำงานก่อน แล้วแอปจึงรันจากบนลงล่าง ดังนั้นค่าที่แสดงในรอบ rerun นั้น<b>สะท้อนการอัปเดตแล้ว</b> ไม่ต้องรอรอบถัดไป</p>
+
+<h3>Button callbacks: <code>on_click=f</code> vs <code>on_click=f()</code> ★★★</h3>
+<div class="compare">
+  <div class="good"><span class="label">✅ ส่งฟังก์ชัน (pass the callback)</span>
+<script type="text/plain" class="code" data-title="counter_callback.py">
+if "count" not in st.session_state:
+    st.session_state.count = 0
+def increment_counter():                  ##! 1. นิยาม callback **ก่อน** สร้าง widget
+    st.session_state.count += 1
+st.button("Increment", on_click=increment_counter)   ##! 2. ส่ง “ตัวฟังก์ชัน” ให้ Streamlit เรียกตอนปุ่มถูกคลิก
+st.button("Click ME!")
+st.write("Count =", st.session_state.count)
+</script>
+  <p class="small">Increment ถูกคลิก → callback ถูกเรียก → count += 1 → script rerun · กด “Click ME!” แค่ rerun เฉย ๆ count ไม่เปลี่ยน</p></div>
+  <div class="bad"><span class="label">❌ เรียกฟังก์ชันทันที (call it)</span>
+<script type="text/plain" class="code" data-title="counter_callback.py">
+if "count" not in st.session_state:
+    st.session_state.count = 0
+def increment_counter():
+    st.session_state.count += 1
+st.button("Increment", on_click=increment_counter())  ##! มี `()` = **เรียกฟังก์ชันตอน script รันถึงบรรทัดนี้** ทุก rerun และส่งค่าที่คืน (None) ให้ on_click
+st.button("Click ME!")
+st.write("Count =", st.session_state.count)
+</script>
+  <p class="small">count เพิ่ม<b>ทุก rerun</b> ทั้งตอนโหลดหน้าแรก (Count = 1) และตอนกดปุ่มอะไรก็ได้ แม้แต่ “Click ME!”</p></div>
+</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ลำดับ callback และความต่างของ <code>f</code> vs <code>f()</code></div>
+  <div class="sim-body">
+    <div class="row" style="margin-bottom:10px">
+      <div class="seg" id="cbMode"><button type="button" class="on" data-m="pass">on_click=increment_counter ✅</button><button type="button" data-m="call">on_click=increment_counter() ❌</button></div>
+      <label class="small"><input type="checkbox" id="cbFast"> ข้ามแอนิเมชัน</label>
+    </div>
+    <div class="phase" id="cbPhase"><span data-p="1">1. คลิก</span><span data-p="2">2. callback รัน</span><span data-p="3">3. state อัปเดต</span><span data-p="4">4. script rerun</span></div>
+    <div class="grid c2">
+      <div id="cbCode"></div>
+      <div>
+        <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>localhost:8501</span></div><div class="content">
+          <div class="row"><button class="btn" id="cbInc" type="button">Increment</button><button class="btn" id="cbMe" type="button">Click ME!</button></div>
+          <div class="out" style="margin-top:10px">Count = <b id="cbVal">0</b></div>
+        </div></div>
+        <div class="out log small" id="cbLog" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Input callbacks: <code>on_change</code> + <code>args</code> / <code>kwargs</code></h3>
+<script type="text/plain" class="code" data-title="input_callback.py">
+import streamlit as st
+if "history" not in st.session_state:
+    st.session_state.history = []
+def save_name():
+    st.session_state.history.append(
+        st.session_state.name                 ##! ใน callback อ่านค่า widget ปัจจุบันผ่าน key (ค่าใหม่ถูกเขียนลง state แล้วก่อน callback ถูกเรียก)
+    )
+st.text_input("Name", key="name", on_change=save_name)   ##! `on_change` = เรียกเมื่อค่าของ widget เปลี่ยน
+st.write(st.session_state.history)
+</script>
+<div class="grid c3">
+  <div class="card"><span class="label">A · on_change</span>ใช้กับ text_input, slider, selectbox, checkbox และ input widget ส่วนใหญ่</div>
+  <div class="card"><span class="label">B · args / kwargs</span>ส่งค่าคงที่ให้ callback เช่น <code>on_click=add, args=(5,)</code> หรือ <code>kwargs={"step": 5}</code></div>
+  <div class="card"><span class="label">C · ค่า widget ปัจจุบัน</span>ภายใน callback อ่านค่า keyed widget จาก <code>st.session_state</code></div>
+</div>
+<script type="text/plain" class="code" data-title="ตัวอย่าง args / kwargs">
+def add(amount, label="step"):
+    st.session_state.count += amount
+st.button("+5", on_click=add, args=(5,))                        ##! `args` เป็น tuple → เรียก `add(5)` (ต้องมี comma: `(5,)`)
+st.button("+10", on_click=add, kwargs={"amount": 10, "label": "big"})   ##! `kwargs` เป็น dict → เรียก `add(amount=10, label="big")`
+</script>
+<p><b>Key point:</b> callback อัปเดต session memory ได้ <b>ทันทีที่ผู้ใช้เปลี่ยน input</b></p>
+
+<h3>Forms + Callbacks: ใส่ callback ที่ submit button</h3>
+<script type="text/plain" class="code" data-title="form_callback.py">
+def submit_message():
+    st.session_state.messages.append(
+        st.session_state.message              ##! อ่านค่าที่พิมพ์ใน form ผ่าน key "message"
+    )
+with st.form("chat_form"):
+    st.text_input("Message", key="message")   ##! widget ใน form ใส่ on_change ไม่ได้ (เพราะยังไม่ส่งค่าจนกว่าจะ submit)
+    st.form_submit_button(
+        "Add", on_click=submit_message        ##! callback ของ form ต้องอยู่ที่ **submit button** เท่านั้น
+    )
+</script>
+<p><b>Key point:</b> Form รวบรวม input เป็นชุด (batch) และ <b>การกด submit คือ event ที่ commit การอัปเดต state</b></p>
+
+<!-- ===================================================== -->
+<h2><span class="num">9</span> Common Errors &amp; Caveats <span class="chip w11">W11</span><span class="chip exam">★★★</span></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>ข้อผิดพลาด</th><th>อาการ</th><th>วิธีแก้</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><b>อ่าน key ก่อนที่มันจะมีอยู่</b></td><td><code>KeyError</code> / exception ตอนรันรอบแรก</td><td>Initialize default ก่อนอ่านหรืออัปเดต</td></tr>
+<tr><td>2</td><td><b>เปลี่ยนค่า widget หลังสร้าง widget แล้ว</b></td><td><code>StreamlitAPIException</code></td><td>ถ้า state คุม widget ให้ตั้งค่า<b>ก่อน</b>สร้าง widget</td></tr>
+<tr><td>3</td><td><b>ตั้ง default ซ้อนกัน 2 ที่</b> (state + <code>value=</code>)</td><td>Warning ตอน first run (ไม่รู้จะใช้ค่าไหน)</td><td>เลือก source of truth เดียว: init state แล้วใช้ key</td></tr>
+<tr><td>+</td><td><b>พยายามตั้งค่าให้ปุ่มค้าง True</b></td><td>Error: ตั้งค่าปุ่มผ่าน session state ไม่ได้</td><td>เก็บ <b>ผลลัพธ์ (outcome)</b> ของปุ่มแทน</td></tr>
+</tbody></table></div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> หาบั๊ก: กด ▶ Run เพื่อดูว่าพังที่บรรทัดไหน แล้วดูวิธีแก้</div>
+  <div class="sim-body"><div id="bugList"></div></div>
+</div>
+
+<h3>Button state is ephemeral: ปุ่มเป็น True แค่ 1 script run</h3>
+<p>ปุ่มแทน <b>event ชั่วคราว</b> Streamlit จัดการค่าของมันเอง <b>อย่าพยายามบังคับให้ปุ่มค้าง True ผ่าน Session State</b> ให้เก็บ <b>ผลลัพธ์ของการกด</b> แทน</p>
+<div class="compare">
+  <div class="bad"><span class="label">❌ Do not do this</span>
+<script type="text/plain" class="code">
+if "my_button" not in st.session_state:
+    st.session_state.my_button = True    ##! พยายามตั้งค่าให้ key ของปุ่ม
+st.button("Submit", key="my_button")     ##! ERROR: ค่าของปุ่มตั้งผ่าน session state ไม่ได้
+</script></div>
+  <div class="good"><span class="label">✅ Do this</span>
+<script type="text/plain" class="code">
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False   ##! เก็บ “ผลลัพธ์” แยกเป็น key ของเราเอง
+if st.button("Submit"):                  ##! button state = temporary event
+    st.session_state.submitted = True    ##! submitted state = persistent outcome
+</script></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">10</span> Session lifetime &amp; Reset <span class="chip w11">W11</span><span class="chip exam">★</span></h2>
+<div class="grid c3">
+  <div class="card"><span class="label">A · แท็บเดิม โต้ตอบปกติ</span>State <b>อยู่รอด</b>ข้าม rerun</div>
+  <div class="card"><span class="label">B · แท็บใหม่ / ผู้ใช้ใหม่</span>เริ่ม session ใหม่พร้อม state ของตัวเอง (ว่าง)</div>
+  <div class="card"><span class="label">C · Reload / connection reset</span>Session State <b>อาจถูก reset</b> เพราะ WebSocket connection เปลี่ยน</div>
+</div>
+<script type="text/plain" class="code" data-title="Manual reset in the app">
+if st.button("Clear this session"):
+    for key in list(st.session_state.keys()):   ##! copy keys เป็น list ก่อน แล้วค่อยลบทีละตัว
+        del st.session_state[key]
+    st.rerun()                                  ##! สั่ง rerun ทันที เพื่อให้หน้าจอวาดใหม่จาก state ที่ว่างแล้ว (init ใหม่ตั้งแต่ต้น)
+</script>
+<div class="callout warn"><div class="callout-title">⚠ Key point</div>Session State คือ <b>หน่วยความจำชั่วคราวของแอป ไม่ใช่ที่เก็บข้อมูลถาวร</b> ปิดแท็บแล้วหาย ถ้าต้องเก็บถาวรให้ใช้ไฟล์หรือ database (Week 12)</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">11</span> ใช้ Cache + Session State ร่วมกัน <span class="chip w11">W11</span></h2>
+<div class="flow"><div class="step"><b>Cached data/model</b>shared reusable work</div><div class="arrow">→</div><div class="step"><b>App rerun</b>โหลดเร็ว</div><div class="arrow">←</div><div class="step"><b>Session State</b>user choices / history</div></div>
+<script type="text/plain" class="code" data-title="Example structure">
+@st.cache_resource
+def load_model():
+    return create_model()                 ##! model หนักโหลดครั้งเดียว **ใช้ร่วมทุก session** (Week 10)
+if "messages" not in st.session_state:
+    st.session_state.messages = []       ##! ประวัติแชท **แยกของแต่ละ session**
+model = load_model()
+# messages are per session; model is shared
+</script>
+<p><b>Key point:</b> Cache เลี่ยงงานหนักซ้ำ ส่วน Session State รักษา interaction context ของผู้ใช้แต่ละคน</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">12</span> ควรเก็บใน Session State ไหม? <span class="chip w11">W11</span><span class="chip exam">★★</span></h2>
+<div class="grid c2">
+  <div class="card">
+    <span class="label">ตัวอย่างจากสไลด์</span>
+    <ul style="margin:0">
+      <li><b style="color:var(--ok)">GOOD</b> chat history ของผู้ใช้ 1 คน</li>
+      <li><b style="color:var(--ok)">GOOD</b> หน้า/step ปัจจุบันของ workflow</li>
+      <li><b style="color:var(--ok)">GOOD</b> ตัวเลือกชั่วคราว หรือ draft input</li>
+      <li><b style="color:var(--warn)">MAYBE</b> ตารางที่แก้แล้วก่อน save ลงไฟล์/database</li>
+      <li><b style="color:var(--bad)">SKIP</b> model ใหญ่ที่ทุกคนใช้ร่วม → cache</li>
+      <li><b style="color:var(--bad)">SKIP</b> record ถาวรที่ต้องอยู่หลังปิดแอป → DB</li>
+      <li><b style="color:var(--bad)">SKIP</b> ผลการคำนวณหนักที่คงที่ → cache</li>
+    </ul>
+  </div>
+  <div class="card">
+    <span class="label">ถาม 2 คำถาม</span>
+    <p><b>1. ใครควรเห็น?</b><br>1 ผู้ใช้/session → <b>Session State</b><br>ทุกผู้ใช้ → <b>Cache หรือ storage</b></p>
+    <p style="margin:0"><b>2. ควรอยู่นานแค่ไหน?</b><br>จนปิดแท็บ → <b>Session State</b><br>ข้ามการเข้าใช้หลายครั้ง → <b>ไฟล์ / database</b></p>
+  </div>
+</div>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> เก็บที่ไหนดี: Session State, Cache หรือ Database/ไฟล์?</div>
+  <div class="sim-body"><div id="sortState"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">13</span> Wrap-up Week 11 <span class="chip w11">W11</span></h2>
+<ol class="steps">
+  <li>การโต้ตอบใน Streamlit <b>ยังคง rerun ทั้งสคริปต์</b></li>
+  <li>ตัวแปรธรรมดาถูก reset ส่วน <b>Session State เก็บค่าที่เลือกไว้ต่อ session</b></li>
+  <li><b>Widget keys และ callbacks</b> ทำให้การอัปเดต state ชัดเจนและตั้งใจ</li>
+</ol>
+<div class="flow"><div class="step">Rerun</div><div class="arrow">→</div><div class="step">Read state</div><div class="arrow">→</div><div class="step">Update state</div><div class="arrow">→</div><div class="step">Next rerun</div></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">14</span> Lab 11: Stateful Helpdesk Model Lab — ภาพรวม <span class="chip w11">W11</span></h2>
+<p>แอปให้ผู้ใช้<b>เลือกช่วงวันที่ของ helpdesk tickets</b> (2,080 tickets, 4 categories) ตั้งค่า model (N-gram, C) แล้วกด <b>Train</b> เพื่อเทียบผลการทดลองหลายครั้งใน session เดียว ถ้าใช้แค่ local variable ผลการ train และประวัติจะหายทุก rerun</p>
+<h3>State 3 ประเภทในแอป ★</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>ประเภท</th><th>ตัวอย่าง key</th><th>เหตุผลที่ต้องจำ</th></tr></thead>
+<tbody>
+<tr><td><b>Input state</b></td><td><code>range_mode</code>, <code>start_date</code>, <code>end_date</code>, <code>ngram_mode</code>, <code>regularization_c</code></td><td>เป็น configuration ของการ train รอบถัดไป</td></tr>
+<tr><td><b>Derived state</b> (current result)</td><td><code>trained_model</code>, <code>training_summary</code>, <code>validation_results</code>, <code>training_error</code></td><td>เป็นผลลัพธ์ที่เกิดจาก input state ชุดหนึ่ง</td></tr>
+<tr><td><b>History state</b> (experiment record)</td><td><code>experiment_history</code>, <code>best_experiment</code>, <code>experiment_counter</code></td><td>เก็บหลายเหตุการณ์ตลอด session</td></tr>
+</tbody></table></div>
+<div class="callout key"><div class="callout-title">💡 แนวคิดสำคัญของ Lab</div>
+Session State ไม่ได้มีไว้แค่เก็บค่า ผู้พัฒนาต้องกำหนดด้วยว่า <b>เมื่อใดค่าที่เก็บไว้ “หมดอายุ” และควรถูกล้าง</b> (invalidate)<br>
+<b>ลำดับเมื่อ widget เปลี่ยน:</b> Streamlit <b>เขียนค่าลง widget key</b> → เรียก <b>on_change callback</b> → <b>rerun</b> script จากต้น → <b>render</b> จาก state ล่าสุด</div>
+<div class="flow">
+  <div class="step"><b>Load</b>cached CSV</div><div class="arrow">→</div>
+  <div class="step"><b>Init</b>Session State</div><div class="arrow">→</div>
+  <div class="step"><b>Render</b>Date/Model controls</div><div class="arrow">→</div>
+  <div class="step"><b>Filter</b>selected data</div><div class="arrow">→</div>
+  <div class="step"><b>Button</b>train (cached) + validate</div><div class="arrow">→</div>
+  <div class="step"><b>Store</b>current + history + best</div>
+</div>
+
+<h3>Data loading ใช้ <code>@st.cache_data</code> (TODO 0)</h3>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (0.3)">
+@st.cache_data(                                        ##! โหลด CSV ได้ DataFrame = **ข้อมูล** → ใช้ cache_data (ได้สำเนา ปลอดภัยจากการแก้ไข)
+    show_spinner="Loading the timestamped tickets...",
+    show_time=True,                                    ##! แสดงเวลาที่ใช้ตอน cache miss
+)
+def load_training_data(file_path: str) -> pd.DataFrame:
+    return pd.read_csv(
+        file_path,
+        parse_dates=["created_at"],                    ##! แปลงคอลัมน์ created_at เป็น datetime เพื่อกรองตามวันที่ได้
+    )
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">15</span> Lab 11: initialize_session_state &amp; invalidate <span class="chip w11">W11</span><span class="chip exam">★</span></h2>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (0.4 / 0.5)">
+def initialize_session_state(data_min_date, data_max_date) -> None:
+    if "range_mode" not in st.session_state:          ##! ทุก key ใช้ pattern เดียวกัน: สร้างเฉพาะตอนยังไม่มี → rerun ไม่เขียนทับ
+        st.session_state.range_mode = "28 days"
+    if "end_date" not in st.session_state:
+        st.session_state.end_date = data_max_date      ##! ค่าเริ่มต้น = วันสุดท้ายของ dataset
+    if "start_date" not in st.session_state:
+        st.session_state.start_date = max(
+            data_min_date,
+            data_max_date - timedelta(days=27),        ##! 28 วันนับรวมหัวท้าย = ลบ 27 · `max` กันไม่ให้ก่อนวันแรกของข้อมูล
+        )
+    if "ngram_mode" not in st.session_state:
+        st.session_state.ngram_mode = "Single words + word pairs"
+    if "regularization_c" not in st.session_state:
+        st.session_state.regularization_c = 1.0
+    if "trained_model" not in st.session_state:        ##! Current results เริ่มเป็น None (ยังไม่ได้ train)
+        st.session_state.trained_model = None
+    if "experiment_history" not in st.session_state:
+        st.session_state.experiment_history = []       ##! ถ้าไม่มี if นี้ history จะกลายเป็น [] ทุก rerun (“History หายทุก Rerun”)
+    if "best_experiment" not in st.session_state:
+        st.session_state.best_experiment = None
+    if "experiment_counter" not in st.session_state:
+        st.session_state.experiment_counter = 0
+
+def invalidate_trained_model() -> None:                 ##! ล้าง **Current results** เท่านั้น
+    st.session_state.trained_model = None
+    st.session_state.training_summary = None
+    st.session_state.validation_results = None
+    st.session_state.training_error = None             ##! **ไม่แตะ** experiment_history, best_experiment, experiment_counter → อดีตยังอยู่
+</script>
+<p>ถูกเรียกที่ 1.1 <b>หลังโหลดข้อมูล แต่ก่อนสร้าง widget</b> (เพราะ widget ใช้ key เหล่านี้ ต้อง init ก่อน = Common Error #2)</p>
+<div class="table-wrap"><table>
+<thead><tr><th>เหตุการณ์</th><th>อะไรถูกล้าง</th><th>อะไรยังอยู่</th></tr></thead>
+<tbody>
+<tr><td>เปลี่ยนวันที่ / N-gram / C</td><td>Current results (model, summary, validation, error)</td><td>History, Best, Counter</td></tr>
+<tr><td>กด Clear experiment history</td><td>เฉพาะ <code>experiment_history</code></td><td>Best, Counter, Current</td></tr>
+<tr><td>สลับ Section ใน sidebar</td><td>ไม่มี (แค่ rerun)</td><td>ทุกอย่าง</td></tr>
+</tbody></table></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">16</span> Lab 11: Callbacks ประสานวันที่ (date sync) <span class="chip w11">W11</span><span class="chip exam">★★</span></h2>
+<p>เมื่อเลือกโหมด <code>7 days</code>/<code>28 days</code> แล้วผู้ใช้เปลี่ยนวันเริ่ม แอปต้องปรับวันจบให้อัตโนมัติ (และกลับกัน) ผู้ใช้ไม่ต้องคำนวณเอง</p>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (0.2, 0.6–0.8)">
+PRESET_DAYS = {"7 days": 7, "28 days": 28}             ##! "Custom" และ "ALL" ไม่อยู่ใน dict → `.get()` คืน **None**
+
+def update_end_date() -> None:                         ##! callback ของ **Start date** widget
+    selected_days = PRESET_DAYS.get(st.session_state.range_mode)
+    if st.session_state.range_mode == "ALL":
+        st.session_state.range_mode = "Custom"         ##! แก้วันที่เองในโหมด ALL → ช่วงอาจไม่ครอบคลุมทั้งหมดแล้ว จึงเปลี่ยนเป็น Custom (คง End date ไว้)
+    elif selected_days is not None:                    ##! เฉพาะ 7/28 days (Custom ได้ None → ไม่แก้ End date)
+        proposed_end = (st.session_state.start_date
+                        + timedelta(days=selected_days - 1))   ##! **นับรวมหัวท้าย**: 1–7 มิ.ย. = 7 วัน จึงบวกแค่ 6
+        st.session_state.end_date = min(proposed_end, DATA_MAX_DATE)   ##! `min` ไม่ให้เกินวันสุดท้ายของ dataset
+    invalidate_trained_model()                         ##! อยู่นอก if → ล้างผลเก่า **ทุกครั้ง** ที่ Start date เปลี่ยน
+
+def update_start_date() -> None:                       ##! callback ของ **End date** (สมมาตรกัน)
+    selected_days = PRESET_DAYS.get(st.session_state.range_mode)
+    if st.session_state.range_mode == "ALL":
+        st.session_state.range_mode = "Custom"
+    elif selected_days is not None:
+        proposed_start = (st.session_state.end_date
+                          - timedelta(days=selected_days - 1))
+        st.session_state.start_date = max(proposed_start, DATA_MIN_DATE)   ##! `max` ไม่ให้ก่อนวันแรกของ dataset
+    invalidate_trained_model()
+
+def select_range() -> None:                            ##! callback ของ radio เลือกช่วง
+    if st.session_state.range_mode == "ALL":
+        st.session_state.start_date = DATA_MIN_DATE    ##! ALL = ทั้ง dataset
+        st.session_state.end_date = DATA_MAX_DATE
+    else:
+        selected_days = PRESET_DAYS.get(st.session_state.range_mode)
+        if selected_days is not None:                  ##! 7/28 days: คง start แล้วคำนวณ end ใหม่
+            proposed_end = (st.session_state.start_date
+                            + timedelta(days=selected_days - 1))
+            st.session_state.end_date = min(proposed_end, DATA_MAX_DATE)
+    invalidate_trained_model()
+</script>
+<div class="table-wrap"><table>
+<thead><tr><th>โหมด</th><th>เมื่อผู้ใช้เปลี่ยน Start date</th></tr></thead>
+<tbody>
+<tr><td><code>7 days</code> / <code>28 days</code></td><td>คำนวณ End date ใหม่ = start + (days − 1) แต่ไม่เกินวันสุดท้าย</td></tr>
+<tr><td><code>Custom</code></td><td>คง End date ไว้ ให้ผู้ใช้กำหนดเอง</td></tr>
+<tr><td><code>ALL</code></td><td>เปลี่ยนเป็น <code>Custom</code> และคง End date ไว้</td></tr>
+</tbody></table></div>
+<p>ทำไมเขียนค่า <code>st.session_state.end_date</code> ใน callback ได้ ทั้งที่ end_date เป็น key ของ widget? เพราะ <b>callback รันก่อน rerun</b> ตอนนั้น widget ในรอบใหม่ยังไม่ถูกสร้าง จึงไม่ชน Common Error #2</p>
+
+<h3>Control panel: widget ↔ key ↔ callback</h3>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (1.3)">
+st.radio("Select a range",
+         options=["7 days", "28 days", "Custom", "ALL"],
+         horizontal=True,
+         key="range_mode",                       ##! ค่า radio อยู่ใน st.session_state.range_mode (init ไว้แล้ว ไม่ต้องใส่ index/value)
+         on_change=select_range)                 ##! เปลี่ยนโหมด → select_range() ก่อน rerun
+st.date_input("Start date",
+              min_value=DATA_MIN_DATE,
+              max_value=DATA_MAX_DATE,           ##! จำกัดให้เลือกได้เฉพาะช่วงที่มีข้อมูล
+              key="start_date",
+              on_change=update_end_date)
+st.date_input("End date", min_value=DATA_MIN_DATE, max_value=DATA_MAX_DATE,
+              key="end_date", on_change=update_start_date)
+st.selectbox("Text features", options=list(NGRAM_OPTIONS.keys()),
+             key="ngram_mode", on_change=invalidate_trained_model)       ##! เปลี่ยน setting ของ model → ผลเดิมไม่ตรงแล้ว ต้องล้าง
+st.select_slider("Regularization strength (C)", options=[0.1, 1.0, 10.0],
+                 key="regularization_c", on_change=invalidate_trained_model)
+</script>
+<div class="table-wrap"><table>
+<thead><tr><th>Widget</th><th>key</th><th>on_change</th><th>ผลเมื่อเปลี่ยนค่า</th></tr></thead>
+<tbody>
+<tr><td>Radio ช่วงเวลา</td><td><code>range_mode</code></td><td><code>select_range</code></td><td>ปรับวันที่ตามตัวเลือก + ล้าง current</td></tr>
+<tr><td>Start date</td><td><code>start_date</code></td><td><code>update_end_date</code></td><td>ปรับ End date ตามโหมด + ล้าง current</td></tr>
+<tr><td>End date</td><td><code>end_date</code></td><td><code>update_start_date</code></td><td>ปรับ Start date ตามโหมด + ล้าง current</td></tr>
+<tr><td>Selectbox N-gram</td><td><code>ngram_mode</code></td><td><code>invalidate_trained_model</code></td><td>ล้าง current</td></tr>
+<tr><td>Select slider C</td><td><code>regularization_c</code></td><td><code>invalidate_trained_model</code></td><td>ล้าง current</td></tr>
+</tbody></table></div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Lab 11 date-sync simulator (logic เดียวกับ starter.py)</div>
+  <div class="sim-body">
+    <p class="howto">Dataset: <b>2026-01-01 … 2026-09-09</b> ลองเปลี่ยนโหมด/วันที่/C แล้วดูลำดับเหตุการณ์ใน log กด Train แล้วลองเปลี่ยนค่าอีกครั้ง จะเห็นว่า current model ถูกล้าง แต่ history และ best ยังอยู่ <span class="muted">(คะแนนเป็นค่าจำลองเพื่อการเรียนเท่านั้น)</span></p>
+    <div class="grid c2">
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>Training data and model settings</span></div><div class="content ds-grid">
+        <div class="small muted">Select a range <span class="pill">key="range_mode"</span></div>
+        <div class="row" id="dsMode"></div>
+        <div class="grid c2" style="margin:8px 0">
+          <label>Start date <span class="pill">on_change=update_end_date</span><input type="date" id="dsStart" min="2026-01-01" max="2026-09-09"></label>
+          <label>End date <span class="pill">on_change=update_start_date</span><input type="date" id="dsEnd" min="2026-01-01" max="2026-09-09"></label>
+        </div>
+        <div class="grid c2">
+          <label>Text features<select id="dsNgram"><option>Single words</option><option selected>Single words + word pairs</option></select></label>
+          <label>C<select id="dsC"><option>0.1</option><option selected>1.0</option><option>10.0</option></select></label>
+        </div>
+        <div class="row" style="margin-top:10px"><button class="btn primary" id="dsTrain" type="button">Train the selected model</button><button class="btn sm" id="dsClear" type="button">Clear experiment history</button></div>
+        <div id="dsMsg" style="margin-top:8px"></div>
+      </div></div>
+      <div>
+        <div class="panel"><span class="label">st.session_state</span><div class="out" id="dsState" style="font-size:12.5px"></div></div>
+        <div class="out log small" id="dsLog" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div id="dsHist" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<h3>Date filter: ทำไมใช้ <code>&lt; end_exclusive</code> ★★</h3>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (0.9)">
+def filter_tickets_by_date(tickets_df, start_date, end_date) -> pd.DataFrame:
+    if start_date > end_date:
+        return tickets_df.iloc[0:0].copy()                ##! ช่วงไม่ถูกต้อง → คืน DataFrame ว่าง (มีคอลัมน์ครบแต่ 0 แถว)
+    start_timestamp = pd.Timestamp(start_date)            ##! 00:00:00 ของวันเริ่ม
+    end_exclusive = pd.Timestamp(end_date) + pd.Timedelta(days=1)   ##! 00:00:00 ของ **วันถัดจาก** End date
+    mask = (
+        (tickets_df["created_at"] >= start_timestamp)
+        & (tickets_df["created_at"] < end_exclusive)      ##! ใช้ `<` (ไม่ใช่ `<=`) → รวมทุกเวลาของวันสุดท้ายแต่ไม่เอาวันถัดไป
+    )
+    return tickets_df.loc[mask].copy()
+</script>
+<p>widget คืนค่าเป็น <b>วันที่ (ไม่มีเวลา)</b> แต่ <code>created_at</code> มีเวลา ถ้าใช้ <code>created_at &lt;= pd.Timestamp(end_date)</code> ขอบเขตจะเป็น <b>00:00:00 ของ End date</b> ticket ช่วงบ่ายวันนั้นจะหาย ตัวอย่าง: เลือก 1–7 ก.ย. → <code>created_at &gt;= 1 ก.ย. 00:00</code> และ <code>created_at &lt; 8 ก.ย. 00:00</code> · ส่วนจำนวนวัน (Calendar days) = <code>(end − start).days + 1</code></p>
+
+<!-- ===================================================== -->
+<h2><span class="num">17</span> Lab 11: Train เมื่อกดปุ่มเท่านั้น &amp; เก็บ Current / History / Best <span class="chip w11">W11</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (2.1–2.2)">
+training_ready = (
+    date_range_is_valid
+    and not selected_df.empty
+    and selected_df["category"].nunique() >= 2         ##! classifier ต้องมีอย่างน้อย 2 class
+)
+train_clicked = st.button("Train the selected model",
+                          type="primary",
+                          disabled=not training_ready)  ##! ข้อมูลไม่พร้อม → ปุ่มกดไม่ได้
+if train_clicked:                                       ##! True เฉพาะรอบที่กด → train **เฉพาะเมื่อผู้ใช้ยืนยัน** (เปลี่ยน widget อย่างเดียวไม่ train)
+    with st.spinner("Training and validating the model..."):
+        train_and_store_model(selected_df, validation_df)
+if st.session_state.training_error:
+    st.error(st.session_state.training_error)
+
+st.subheader("Current model: fixed validation queries")   ##! อยู่ **นอก** `if train_clicked` → อ่านจาก state จึงแสดงต่อได้ใน rerun ถัดไป
+if st.session_state.validation_results is None:
+    st.info("Train a model to see its evaluation on the fixed query set.")
+else:
+    summary = st.session_state.training_summary
+</script>
+<div class="callout exam"><div class="callout-title">★ คำถามจาก Lab</div>
+กด Train แล้วสลับ Section แล้วกลับมา → <b>report ยังอยู่</b> (แค่ rerun, state ไม่ถูกล้าง) · แต่เปลี่ยน C → <b>report หาย</b> เพราะ <code>on_change=invalidate_trained_model</code> ล้าง current results และต้องกด Train ใหม่</div>
+
+<script type="text/plain" class="code" data-title="Lab 11 · starter.py (0.10) — train_and_store_model (ตัดย่อ)">
+def train_and_store_model(selected_df, validation_df) -> None:
+    st.session_state.training_error = None
+    if selected_df.empty:
+        st.session_state.training_error = "The selected period contains no training tickets."
+        return                                              ##! ตรวจข้อมูลก่อน: ว่างหรือ category < 2 → เก็บ error แล้วจบ
+    try:
+        texts = tuple(selected_df["text"].astype(str))      ##! แปลงเป็น **tuple** เพราะเป็น argument ของ cached function (ต้อง hashable)
+        categories = tuple(selected_df["category"].astype(str))
+        model = train_model(texts, categories, ngram_range, regularization_c)   ##! config เดิม → cache hit ได้ model เดิมทันที
+        scores, validation_results = evaluate_model(model, validation_df, categories)
+
+        st.session_state.experiment_counter += 1            ##! นับ run ที่สำเร็จ
+        summary = {"run": st.session_state.experiment_counter,
+                   "start_date": str(st.session_state.start_date),
+                   "end_date": str(st.session_state.end_date),
+                   "ngram_mode": st.session_state.ngram_mode,
+                   "regularization_c": regularization_c,
+                   **scores}                                ##! `**scores` แตก dict คะแนนเข้ามารวมใน summary
+        st.session_state.trained_model = model              ##! Current results → state
+        st.session_state.training_summary = summary
+        st.session_state.validation_results = validation_results
+
+        history = st.session_state.experiment_history       ##! อ้างถึง list ตัวเดียวกับใน state (แก้ history = แก้ใน state)
+        matching_index = None
+        for index, previous in enumerate(history):
+            same_configuration = (previous["start_date"] == summary["start_date"]
+                and previous["end_date"] == summary["end_date"]
+                and previous["ngram_mode"] == summary["ngram_mode"]
+                and previous["regularization_c"] == summary["regularization_c"])
+            if same_configuration:
+                matching_index = index
+                break
+        if matching_index is None:
+            history.append(summary.copy())                  ##! config ใหม่ → เพิ่มแถว (ใช้ `.copy()` แยก object)
+        else:
+            history[matching_index] = summary.copy()        ##! config เดิม → **แทนที่** แถวเดิม (1 แถวต่อ 1 configuration)
+
+        best = st.session_state.best_experiment
+        if best is None:
+            st.session_state.best_experiment = summary.copy()   ##! ครั้งแรก = best อัตโนมัติ
+        elif summary["validation_f1_macro"] > best["validation_f1_macro"]:
+            st.session_state.best_experiment = summary.copy()   ##! macro F1 สูงกว่า → best ใหม่
+        elif (summary["validation_f1_macro"] == best["validation_f1_macro"]
+              and summary["validation_accuracy"] > best["validation_accuracy"]):
+            st.session_state.best_experiment = summary.copy()   ##! F1 เท่ากัน → ใช้ accuracy ตัดสิน (tie-break)
+    except Exception as error:
+        st.session_state.trained_model = None                ##! train ล้มเหลว → ล้าง current แล้วเก็บข้อความ error
+        st.session_state.training_error = f"Training failed. {type(error).__name__}: {error}"
+
+def clear_experiment_history() -> None:                      ##! ใช้กับ `st.button("Clear experiment history", on_click=clear_experiment_history)`
+    st.session_state.experiment_history = []                 ##! ล้างเฉพาะ history — best ยังอยู่
+</script>
+<div class="callout key"><div class="callout-title">💡 ทำไมเก็บ Best แยกจาก Current และ History?</div>
+<code>best_experiment</code> ยังแสดงได้แม้ (1) เปลี่ยน settings จน current ถูกล้าง หรือ (2) กด Clear history จน <code>experiment_history</code> ว่าง — ถ้าผูก best ไว้กับ list ที่ถูก clear จะหายไปด้วย<br><span class="small muted">หมายเหตุ: best มาจาก validation queries ที่ใช้เลือก parameter จึงไม่ใช่คะแนนจาก independent test set</span></div>
+
+<h3>training.py: cached training (Week 10 + Week 11 ทำงานร่วมกัน)</h3>
+<script type="text/plain" class="code" data-title="Lab 11 · training.py">
+@st.cache_resource(show_spinner="Fitting the selected model...")   ##! model = **resource** ที่ใช้ร่วมกัน (ไม่ copy) ข้าม rerun และข้าม session
+def train_model(
+    texts: tuple[str, ...],                    ##! ทุก argument เป็นส่วนหนึ่งของ cache key: ข้อมูลเดิม + setting เดิม → cache hit
+    categories: tuple[str, ...],
+    ngram_range: tuple[int, int],
+    regularization_c: float,
+) -> Pipeline:
+    """Reuse fits for identical training rows and settings across reruns/sessions.
+    The returned pipeline is shared: callers must only predict, never mutate it."""   ##! เพราะ shared object: ถ้า session หนึ่งแก้ model อีก session จะเห็นด้วย
+    model = build_tiny_pipeline(ngram_range, regularization_c)   ##! TF-IDF(ngram_range) + LogisticRegression(C)
+    model.fit(texts, categories)
+    return model
+</script>
+<div class="grid c2">
+  <div class="card"><span class="label">Cache (training.py)</span>“fit model นี้ไปแล้วหรือยัง?” ใช้ร่วมทุก session · train config เดิมซ้ำ → เร็ว (model_lookup_seconds ต่ำ)</div>
+  <div class="card"><span class="label">Session State (starter.py)</span>“ผู้ใช้คนนี้ทดลองอะไรไปบ้าง?” current / history / best ของ session นี้เท่านั้น</div>
+</div>
+<p class="small"><b>Metrics</b> <span class="chip extra">ส่วนเสริม (Lab)</span> — Accuracy = ตอบถูกกี่ส่วนจากทั้งหมด · Macro precision/recall/F1 = คำนวณราย category แล้วเฉลี่ยให้น้ำหนักเท่ากัน · Validation set มี 50 queries ต่อ category (balanced) จึงพบว่า macro recall = accuracy · C เล็ก = regularization แรงขึ้น, C ใหญ่ = fit training data ใกล้ขึ้น</p>
+
+<h3>Common mistakes ของ Lab 11 ★</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>อาการ</th><th>สาเหตุ</th><th>วิธีแก้</th></tr></thead>
+<tbody>
+<tr><td>Session State KeyError</td><td>อ่าน key ก่อน initialize</td><td>เรียก initialization หลังโหลดข้อมูล แต่ก่อนสร้าง widgets</td></tr>
+<tr><td>เปลี่ยนวันที่แต่ report เดิมยังอยู่</td><td>callback ไม่ invalidate</td><td>ตรวจ <code>on_change</code> และ <code>invalidate_trained_model()</code></td></tr>
+<tr><td>7 days กลายเป็น 8 วัน</td><td>บวก 7 แทน 6</td><td>ใช้ <code>selected_days - 1</code></td></tr>
+<tr><td>Ticket ช่วงบ่ายของ End date หาย</td><td>ใช้ End เที่ยงคืนแบบ <code>&lt;=</code></td><td>ใช้ <code>&lt; end_exclusive</code></td></tr>
+<tr><td>เปลี่ยน C แล้วเริ่ม train เอง</td><td>เรียก model นอก button block</td><td>Train เฉพาะเมื่อ <code>train_clicked</code></td></tr>
+<tr><td>Result หายหลังเปลี่ยน sidebar</td><td>เก็บใน local variable</td><td>ใช้ current-result keys ใน Session State</td></tr>
+<tr><td>History หายทุก rerun</td><td>initialize <code>[]</code> ทุกครั้ง</td><td>ตรวจ <code>if key not in st.session_state</code></td></tr>
+<tr><td>History เพิ่มแถวเมื่อ train config เดิม</td><td>append โดยไม่หา key เดิม</td><td>เทียบ Start/End/N-gram/C แล้วแทนที่</td></tr>
+<tr><td>Best หายเมื่อ Clear history</td><td>ผูก best กับ list ที่ถูก clear</td><td>เก็บ <code>best_experiment</code> เป็น key แยก</td></tr>
+</tbody></table></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">✎</span> แบบฝึกหัดท้ายบท Week 11 <span class="chip w11">W11</span></h2>
+<p class="muted">ข้อกาตรวจทันทีพร้อมเหตุผล ส่วนข้อเขียนให้ลองตอบก่อนแล้วค่อยกด “ดูแนวคำตอบ” ระบบจะเช็กว่าคุณเขียนถึงคำสำคัญครบไหม</p>
+<div class="quiz-mount" data-week="w11"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปจากสไลด์และ Lab ของวิชา 06016474 Applied AI for IT · Week 11</footer>
+
+<script src="assets/q-w11.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, renderCode, sortGame, esc } = AAIT;
+  const addLog = (el, html) => { const d = document.createElement("div"); d.innerHTML = html; el.prepend(d); };
+  const now = () => new Date().toTimeString().slice(0, 8);
+
+  /* ---------- (1) counter without vs with ---------- */
+  let r1 = 0, r2 = 0, st2 = 0;
+  $("#c1Btn").addEventListener("click", () => {
+    r1++; let count = 0; count += 1;
+    $("#c1Val").textContent = count;
+    addLog($("#c1Log"), `Run #${r1}: <code>count = 0</code> → กด → <code>count += 1</code> → แสดง <b>${count}</b>`);
+  });
+  $("#c2Btn").addEventListener("click", () => {
+    r2++; const before = st2; st2 += 1;
+    $("#c2Val").textContent = st2;
+    addLog($("#c2Log"), `Run #${r2}: มี key "count" แล้ว (=${before}) ข้าม init → <code>+= 1</code> → แสดง <b>${st2}</b>`);
+  });
+
+  /* ---------- (2) two tabs ---------- */
+  let modelLoadedAt = null, modelCalls = 0;
+  const tabs = [{ name: "Tab A", state: null }, { name: "Tab B", state: null }];
+  function loadModel() {
+    if (!modelLoadedAt) { modelCalls++; modelLoadedAt = now(); return "MISS"; }
+    return "HIT";
+  }
+  function paintShared() {
+    $("#tsModel").innerHTML = modelLoadedAt ? `โหลดแล้วตอน <b>${modelLoadedAt}</b> (object เดียวใช้ทุกแท็บ)` : "ยังไม่ถูกเรียก";
+    $("#tsCalls").textContent = `body รันไปแล้ว ${modelCalls} ครั้ง`;
+  }
+  const box = $("#tabsSim");
+  tabs.forEach((t, i) => {
+    const el = document.createElement("div");
+    el.className = "fake-app";
+    el.innerHTML = `<div class="bar"><i></i><i></i><i></i><span>${t.name} · localhost:8501</span></div><div class="content">
+      <div class="row"><button class="btn primary sm" data-a="inc" type="button">Add 1</button><button class="btn sm" data-a="msg" type="button">ส่งข้อความ</button><button class="btn sm danger" data-a="reload" type="button">⟳ Reload แท็บ</button></div>
+      <div class="out small" style="margin-top:8px" data-o="state"></div><div class="small muted" data-o="cache" style="margin-top:6px"></div></div>`;
+    box.appendChild(el);
+    t.el = el;
+    const run = (action) => {
+      if (!t.state) t.state = { count: 0, messages: [] };
+      if (action === "inc") t.state.count += 1;
+      if (action === "msg") t.state.messages.push("msg" + (t.state.messages.length + 1));
+      const res = loadModel();
+      el.querySelector('[data-o="state"]').innerHTML = `st.session_state = ${esc(JSON.stringify(t.state).replace(/"/g, "'").replace(/,/g, ", "))}`;
+      el.querySelector('[data-o="cache"]').innerHTML = `load_model(): <span class="${res === "HIT" ? "hit" : "miss"}">${res === "HIT" ? "cache HIT (ใช้ model เดิม)" : "cache MISS (โหลดครั้งแรก)"}</span>`;
+      paintShared();
+    };
+    el.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.a === "reload") { t.state = null; run("load"); el.querySelector('[data-o="state"]').innerHTML += ` <span class="muted">(session ใหม่ state เริ่มใหม่)</span>`; return; }
+      run(b.dataset.a);
+    });
+    run("load");
+  });
+
+  /* ---------- (3) callback order animator ---------- */
+  const CB = {
+    pass: `import streamlit as st
+if "count" not in st.session_state:
+    st.session_state.count = 0
+def increment_counter():
+    st.session_state.count += 1
+st.button("Increment", on_click=increment_counter)
+st.button("Click ME!")
+st.write("Count =", st.session_state.count)`,
+  };
+  CB.call = CB.pass.replace("on_click=increment_counter)", "on_click=increment_counter())");
+  let cbMode = "pass", cbCount = null, cbBusy = false, cbBlock, cbRun = 0;
+  const cbWait = (ms) => new Promise((r) => setTimeout(r, $("#cbFast").checked ? 0 : ms));
+  const phase = (p) => document.querySelectorAll("#cbPhase span").forEach((s) => s.classList.toggle("on", +s.dataset.p === p));
+  function cbDraw() { $("#cbCode").innerHTML = ""; cbBlock = renderCode(CB[cbMode], { title: "counter_callback.py" }); $("#cbCode").appendChild(cbBlock.el); }
+  async function cbRerun(trigger) {
+    if (cbBusy) return; cbBusy = true; cbRun++;
+    const log = $("#cbLog");
+    if (trigger) { phase(1); addLog(log, `<b>คลิก “${trigger}”</b>`); await cbWait(350); }
+    if (trigger === "Increment" && cbMode === "pass") {
+      phase(2); cbBlock.setHighlight([4, 5]); addLog(log, "callback <code>increment_counter()</code> ถูกเรียก <b>ก่อน</b> rerun"); await cbWait(500);
+      phase(3); cbCount += 1; $("#cbVal").textContent = cbCount; addLog(log, `state อัปเดต: count = ${cbCount}`); await cbWait(400);
+    }
+    phase(4);
+    const seq = [1, 2];
+    for (const n of seq) { cbBlock.setHighlight([n]); await cbWait(220); }
+    if (cbCount === null) { cbBlock.setHighlight([3]); cbCount = 0; await cbWait(220); }
+    cbBlock.setHighlight([4, 5]); await cbWait(160);
+    cbBlock.setHighlight([6]);
+    if (cbMode === "call") { cbCount += 1; addLog(log, `บรรทัด 6: <code>increment_counter()</code> ถูก<b>เรียกระหว่าง script run</b> → count = ${cbCount} <span class="err">(เกิดทุก rerun!)</span>`); }
+    await cbWait(260);
+    cbBlock.setHighlight([7]); await cbWait(220);
+    cbBlock.setHighlight([8]); $("#cbVal").textContent = cbCount; await cbWait(260);
+    cbBlock.setHighlight([]); phase(0);
+    addLog(log, `Run #${cbRun} จบ: แสดง <b>Count = ${cbCount}</b>`);
+    cbBusy = false;
+  }
+  $("#cbMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || cbBusy) return;
+    cbMode = b.dataset.m; cbCount = null; cbRun = 0; $("#cbLog").innerHTML = "";
+    document.querySelectorAll("#cbMode button").forEach((x) => x.classList.toggle("on", x === b));
+    cbDraw(); cbRerun(null);
+  });
+  $("#cbInc").addEventListener("click", () => cbRerun("Increment"));
+  $("#cbMe").addEventListener("click", () => cbRerun("Click ME!"));
+  cbDraw(); cbRerun(null);
+
+  /* ---------- (4) keyed widget live view ---------- */
+  const kw = { name: "", level: 1 };
+  function kwPaint() {
+    $("#kwName").value = kw.name; $("#kwLevel").value = kw.level; $("#kwLv").textContent = kw.level;
+    $("#kwState").textContent = `{'name': '${kw.name}', 'level': ${kw.level}}`;
+    $("#kwWrite").textContent = kw.name || "(ค่าว่าง)";
+    $("#kwState").classList.remove("flash"); void $("#kwState").offsetWidth; $("#kwState").classList.add("flash");
+  }
+  $("#kwName").addEventListener("input", (e) => { kw.name = e.target.value; kwPaint(); });
+  $("#kwLevel").addEventListener("input", (e) => { kw.level = +e.target.value; kwPaint(); });
+  $("#kwMax").addEventListener("click", () => { kw.level = 10; kwPaint(); });
+  $("#kwClear").addEventListener("click", () => { kw.name = ""; kwPaint(); });
+  kwPaint();
+
+  /* ---------- (5) find the bug ---------- */
+  const BUGS = [
+    { title: "Common Error #1: อ่าน key ก่อนที่จะมี", bad: `import streamlit as st
+st.write(st.session_state["name"])`, line: 2, kind: "err",
+      msg: `KeyError: 'st.session_state has no key "name". Did you forget to initialize it?'`,
+      fix: `import streamlit as st
+if "name" not in st.session_state:
+    st.session_state["name"] = ""
+st.write(st.session_state["name"])`, why: "รอบแรกของ session ยังไม่มี key นี้ → initialize ค่า default ก่อน แล้วค่อยอ่าน (safe read)" },
+    { title: "Common Error #2: เปลี่ยนค่า widget หลังสร้าง widget", bad: `slider = st.slider(
+    "My slider", 1, 10, value=5, key="my_slider"
+)
+st.session_state.my_slider = 7`, line: 4, kind: "err",
+      msg: `StreamlitAPIException: st.session_state.my_slider cannot be modified after the widget with key my_slider is instantiated.`,
+      fix: `if "my_slider" not in st.session_state:
+    st.session_state.my_slider = 7
+st.slider("My slider", 1, 10, key="my_slider")`, why: "หลัง widget command = สายเกินไป ถ้า state คุม widget ต้องตั้งค่าก่อนสร้าง widget (หรือแก้ใน callback)" },
+    { title: "Common Error #3: ตั้ง default ซ้อนกัน 2 ที่", bad: `st.session_state.my_slider = 7
+slider = st.slider(
+    "Choose a value",
+    1, 10,
+    value=5,
+    key="my_slider"
+)`, line: 5, kind: "warn",
+      msg: `Warning (first run): The widget with key "my_slider" was created with a default value but also had its value set via the Session State API.`,
+      fix: `if "my_slider" not in st.session_state:
+    st.session_state.my_slider = 7
+st.slider("Choose a value", 1, 10, key="my_slider")`, why: "Session State บอก 7 แต่ value= บอก 5 → widget ไม่รู้จะใช้ค่าไหน เลือก source of truth เดียว (แนะนำ: init state แล้วใช้ key)" },
+    { title: "Caveat: บังคับปุ่มให้ค้าง True", bad: `if "my_button" not in st.session_state:
+    st.session_state.my_button = True
+st.button("Submit", key="my_button")`, line: 3, kind: "err",
+      msg: `StreamlitValueAssignmentNotAllowedError: Values for the widget with key 'my_button' cannot be set using st.session_state.`,
+      fix: `if "submitted" not in st.session_state:
+    st.session_state.submitted = False
+if st.button("Submit"):
+    st.session_state.submitted = True`, why: "button state เป็น temporary event ที่ Streamlit จัดการเอง ให้เก็บ outcome (submitted) แทน" },
+  ];
+  const bugList = $("#bugList");
+  BUGS.forEach((b) => {
+    const wrap = document.createElement("div");
+    wrap.className = "bug-case";
+    wrap.innerHTML = `<h4>${esc(b.title)}</h4>`;
+    const blk = renderCode(b.bad, { title: "bug.py" });
+    wrap.appendChild(blk.el);
+    const ctl = document.createElement("div");
+    ctl.className = "row";
+    ctl.innerHTML = `<button class="btn primary sm" type="button">▶ Run</button><span class="muted small">ลองเดาก่อนว่าบรรทัดไหนมีปัญหา</span>`;
+    wrap.appendChild(ctl);
+    const res = document.createElement("div");
+    wrap.appendChild(res);
+    ctl.querySelector("button").addEventListener("click", () => {
+      blk.setHighlight([b.line], "hl-bad");
+      res.innerHTML = `<div class="${b.kind === "warn" ? "warnbox" : "errbox"}">บรรทัด ${b.line} → ${esc(b.msg)}</div><div class="small"><b>วิธีแก้:</b> ${esc(b.why)}</div>`;
+      res.appendChild(renderCode(b.fix, { title: "fixed.py" }).el);
+    });
+    bugList.appendChild(wrap);
+  });
+
+  /* ---------- (6) Lab 11 date-sync simulator ---------- */
+  const MIN = "2026-01-01", MAX = "2026-09-09";
+  const PRESET = { "7 days": 7, "28 days": 28 };
+  const toD = (s) => new Date(s + "T00:00:00Z");
+  const fromD = (d) => d.toISOString().slice(0, 10);
+  const add = (s, n) => { const d = toD(s); d.setUTCDate(d.getUTCDate() + n); return fromD(d); };
+  const minS = (a, b) => (a < b ? a : b), maxS = (a, b) => (a > b ? a : b);
+  const days = (a, b) => Math.round((toD(b) - toD(a)) / 86400000) + 1;
+  const S = { range_mode: "28 days", end_date: MAX, start_date: maxS(MIN, add(MAX, -27)), ngram_mode: "Single words + word pairs", regularization_c: 1.0, trained_model: null, training_summary: null, experiment_history: [], best_experiment: null, experiment_counter: 0 };
+  const dsLog = $("#dsLog");
+  function invalidate() { const had = S.trained_model; S.trained_model = null; S.training_summary = null; return had; }
+  function logEvent(widgetKey, value, cbName, extra) {
+    addLog(dsLog, `<b>1.</b> เขียน <code>${widgetKey}</code> = ${esc(String(value))} → <b>2.</b> <code>${cbName}()</code>${extra ? " " + extra : ""} → <b>3.</b> rerun → <b>4.</b> render`);
+  }
+  function update_end_date() {
+    const sd = PRESET[S.range_mode];
+    let note = "";
+    if (S.range_mode === "ALL") { S.range_mode = "Custom"; note = "(ALL → Custom)"; }
+    else if (sd !== undefined) { S.end_date = minS(add(S.start_date, sd - 1), MAX); note = `(end = start + ${sd - 1} วัน)`; }
+    else note = "(Custom: get() = None ไม่แก้ end)";
+    if (invalidate()) note += " <span class='err'>ล้าง current model</span>";
+    return note;
+  }
+  function update_start_date() {
+    const sd = PRESET[S.range_mode];
+    let note = "";
+    if (S.range_mode === "ALL") { S.range_mode = "Custom"; note = "(ALL → Custom)"; }
+    else if (sd !== undefined) { S.start_date = maxS(add(S.end_date, -(sd - 1)), MIN); note = `(start = end − ${sd - 1} วัน)`; }
+    else note = "(Custom: ไม่แก้ start)";
+    if (invalidate()) note += " <span class='err'>ล้าง current model</span>";
+    return note;
+  }
+  function select_range() {
+    let note = "";
+    if (S.range_mode === "ALL") { S.start_date = MIN; S.end_date = MAX; note = "(ALL: ใช้ทั้ง dataset)"; }
+    else { const sd = PRESET[S.range_mode]; if (sd !== undefined) { S.end_date = minS(add(S.start_date, sd - 1), MAX); note = `(end = start + ${sd - 1} วัน)`; } else note = "(Custom: ไม่แก้วันที่)"; }
+    if (invalidate()) note += " <span class='err'>ล้าง current model</span>";
+    return note;
+  }
+  const modeBox = $("#dsMode");
+  ["7 days", "28 days", "Custom", "ALL"].forEach((m) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="dsm" value="${m}"> ${m}`;
+    modeBox.appendChild(l);
+  });
+  function fakeScores(cfg) {
+    const d = days(cfg.start_date, cfg.end_date);
+    let h = 0; for (const ch of cfg.start_date + cfg.end_date + cfg.ngram_mode + cfg.regularization_c) h = (h * 31 + ch.charCodeAt(0)) % 997;
+    const f1 = Math.min(0.92, 0.42 + Math.min(d, 252) / 252 * 0.3 + (cfg.regularization_c === 1 ? 0.05 : cfg.regularization_c === 10 ? 0.03 : 0) + (cfg.ngram_mode.includes("pairs") ? 0.02 : 0) + (h % 20) / 1000);
+    return { validation_f1_macro: +f1.toFixed(3), validation_accuracy: +Math.min(0.95, f1 + 0.03 + (h % 7) / 1000).toFixed(3) };
+  }
+  function paintDS() {
+    modeBox.querySelectorAll("input").forEach((i) => (i.checked = i.value === S.range_mode));
+    $("#dsStart").value = S.start_date; $("#dsEnd").value = S.end_date;
+    $("#dsNgram").value = S.ngram_mode; $("#dsC").value = S.regularization_c.toFixed(1);
+    const valid = S.start_date <= S.end_date;
+    $("#dsTrain").disabled = !valid;
+    const show = { ...S, trained_model: S.trained_model ? "<Pipeline run " + S.training_summary.run + ">" : null, training_summary: S.training_summary ? "{run: " + S.training_summary.run + ", ...}" : null, experiment_history: `[${S.experiment_history.length} rows]`, best_experiment: S.best_experiment ? `{run: ${S.best_experiment.run}, f1: ${S.best_experiment.validation_f1_macro}}` : null };
+    $("#dsState").innerHTML = Object.entries(show).map(([k, v]) => `${k}: <b>${esc(v === null ? "None" : String(v))}</b>`).join("<br>");
+    $("#dsMsg").innerHTML = !valid ? `<div class="errbox">Start date must not be after End date.</div>` :
+      `<span class="small">Calendar days = (end − start).days + 1 = <b>${days(S.start_date, S.end_date)}</b></span>` +
+      (S.trained_model ? `<div class="callout ok" style="margin:6px 0 0;padding:8px 12px">Current model: run ${S.training_summary.run} · macro F1 ${S.training_summary.validation_f1_macro}</div>` : `<div class="callout tip" style="margin:6px 0 0;padding:8px 12px">Train a model to see its evaluation.</div>`);
+    const best = S.best_experiment;
+    $("#dsHist").innerHTML = S.experiment_history.length || best ? `<div class="table-wrap"><table class="hist-table"><thead><tr><th>run</th><th>start</th><th>end</th><th>ngram</th><th>C</th><th>macro F1</th><th>accuracy</th></tr></thead><tbody>${S.experiment_history.map((h) => `<tr class="${best && best.run === h.run ? "best" : ""}"><td>${h.run}</td><td>${h.start_date}</td><td>${h.end_date}</td><td>${esc(h.ngram_mode)}</td><td>${h.regularization_c}</td><td>${h.validation_f1_macro}</td><td>${h.validation_accuracy}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">History ว่าง (ถูก clear)</td></tr>`}</tbody></table></div>` + (best ? `<div class="small">🏆 <b>Best (เก็บแยก):</b> run ${best.run} · F1 ${best.validation_f1_macro} · acc ${best.validation_accuracy} · ${best.range_mode} (${best.start_date} → ${best.end_date}) · C=${best.regularization_c}</div>` : "") : "";
+  }
+  modeBox.addEventListener("change", (e) => { S.range_mode = e.target.value; logEvent("range_mode", S.range_mode, "select_range", select_range()); paintDS(); });
+  $("#dsStart").addEventListener("change", (e) => { if (!e.target.value) return; S.start_date = maxS(MIN, minS(MAX, e.target.value)); logEvent("start_date", S.start_date, "update_end_date", update_end_date()); paintDS(); });
+  $("#dsEnd").addEventListener("change", (e) => { if (!e.target.value) return; S.end_date = maxS(MIN, minS(MAX, e.target.value)); logEvent("end_date", S.end_date, "update_start_date", update_start_date()); paintDS(); });
+  $("#dsNgram").addEventListener("change", (e) => { S.ngram_mode = e.target.value; const had = invalidate(); logEvent("ngram_mode", S.ngram_mode, "invalidate_trained_model", had ? "<span class='err'>ล้าง current model</span>" : ""); paintDS(); });
+  $("#dsC").addEventListener("change", (e) => { S.regularization_c = parseFloat(e.target.value); const had = invalidate(); logEvent("regularization_c", S.regularization_c, "invalidate_trained_model", had ? "<span class='err'>ล้าง current model</span>" : ""); paintDS(); });
+  $("#dsTrain").addEventListener("click", () => {
+    S.experiment_counter += 1;
+    const summary = { run: S.experiment_counter, start_date: S.start_date, end_date: S.end_date, range_mode: S.range_mode, ngram_mode: S.ngram_mode, regularization_c: S.regularization_c };
+    Object.assign(summary, fakeScores(summary));
+    S.trained_model = true; S.training_summary = summary;
+    const idx = S.experiment_history.findIndex((p) => p.start_date === summary.start_date && p.end_date === summary.end_date && p.ngram_mode === summary.ngram_mode && p.regularization_c === summary.regularization_c);
+    let note = idx === -1 ? "config ใหม่ → append history" : `config เดิม → แทนที่แถวที่ ${idx + 1}`;
+    if (idx === -1) S.experiment_history.push({ ...summary }); else S.experiment_history[idx] = { ...summary };
+    const b = S.best_experiment;
+    if (!b) { S.best_experiment = { ...summary }; note += " · best แรก"; }
+    else if (summary.validation_f1_macro > b.validation_f1_macro) { S.best_experiment = { ...summary }; note += " · F1 สูงกว่า → best ใหม่"; }
+    else if (summary.validation_f1_macro === b.validation_f1_macro && summary.validation_accuracy > b.validation_accuracy) { S.best_experiment = { ...summary }; note += " · F1 เท่า accuracy สูงกว่า → best ใหม่"; }
+    else note += " · best เดิมยังดีกว่า";
+    addLog(dsLog, `<b>กด Train</b> (train_clicked = True) → counter = ${S.experiment_counter} → ${note}`);
+    paintDS();
+  });
+  $("#dsClear").addEventListener("click", () => { S.experiment_history = []; addLog(dsLog, `<b>on_click=clear_experiment_history</b> → history = [] (best ยังอยู่)`); paintDS(); });
+  paintDS();
+
+  /* ---------- (7) where to store ---------- */
+  sortGame($("#sortState"), {
+    options: ["Session State", "Cache", "Database/ไฟล์"],
+    items: [
+      { text: "ประวัติแชทของผู้ใช้คนนี้ในแท็บนี้", answer: 0, why: "ข้อมูลของ 1 session ที่เปลี่ยนไปเรื่อย ๆ และอยู่แค่จนปิดแท็บ" },
+      { text: "ML model ขนาดใหญ่ที่ทุกคนใช้ทำนาย", answer: 1, why: "งานหนักที่ใช้ร่วมกันทุก session → <code>st.cache_resource</code>" },
+      { text: "ขั้นตอนปัจจุบัน (step 2 จาก 4) ของฟอร์มหลายหน้า", answer: 0, why: "multi-step progress ของผู้ใช้คนนั้น" },
+      { text: "DataFrame ที่อ่านจาก CSV ขนาดใหญ่ซึ่งไม่ค่อยเปลี่ยน", answer: 1, why: "expensive stable work → <code>st.cache_data</code>" },
+      { text: "รายการ ticket ที่ผู้ใช้ส่งมา ต้องเก็บไว้ดูได้ในสัปดาห์หน้า", answer: 2, why: "permanent records ต้องอยู่หลังปิดแอป → database/ไฟล์ (Week 12)" },
+      { text: "filter / category ที่ผู้ใช้เลือกอยู่ตอนนี้", answer: 0, why: "temporary user choices" },
+      { text: "Supabase client / database connection", answer: 1, why: "shared resource → <code>st.cache_resource</code> (Lab 12)" },
+      { text: "Best experiment ของการทดลองใน session นี้ (Lab 11)", answer: 0, why: "เก็บเฉพาะ session นี้ เป็น key แยก <code>best_experiment</code>" },
+    ],
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 12 · Database (Supabase)</title>
+<meta name="description" content="สรุป Week 12 / Lab 12: เชื่อม Streamlit กับฐานข้อมูลภายนอก Supabase, query, caching, pagination, preprocessing และ upsert">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .qb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .qb-grid label { display: block; font-size: 13.5px; color: var(--text-2); }
+  .qb-grid input, .qb-grid select { width: 100%; }
+  .res-table { max-height: 300px; overflow: auto; }
+  .res-table table { font-size: 13px; }
+  .res-table td { white-space: nowrap; }
+  .res-table td.tx { white-space: normal; min-width: 260px; }
+  .stat { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; }
+  .stat b { font-size: 17px; }
+  .badge-ok { color: var(--ok); font-weight: 700; }
+  .badge-bad { color: var(--bad); font-weight: 700; }
+  .page-row { display: grid; grid-template-columns: 110px 1fr 90px; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+  .page-row .pbar { height: 14px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+  .page-row .pbar i { display: block; height: 100%; width: 0; background: var(--wk); transition: width .5s; }
+  .diff-old { background: var(--bad-bg); color: var(--text); text-decoration: line-through; border-radius: 3px; }
+  .feat-grid .card { font-size: 15px; }
+  code, .code-body, .mono, .out { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+</style>
+</head>
+<body class="w12" data-page="w12">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">● Week 12 · Lab 12</span>
+  <h1>Connecting Streamlit to a Database<br><span class="muted" style="font-size:.6em;font-weight:500">Supabase · Query · Cache · Preprocess · Persist</span></h1>
+  <p class="lead">เปลี่ยนแหล่งข้อมูลจาก <b>Local CSV</b> ไปเป็น <b>External database บน Supabase</b> และฝึกเขียน <b>query ที่ดึงเฉพาะข้อมูลที่แอปต้องการ</b> พร้อมใช้ความรู้เรื่อง caching (W10) มาดูแล connection และผล query</p>
+  <div class="meta"><span class="chip w12">Week 12</span><span class="chip">Supabase = BaaS บน PostgreSQL</span><span class="chip exam">★ = ออกสอบบ่อย</span></div>
+</section>
+
+<div class="callout key">
+  <div class="callout-title">🧭 Lab 12 ต่อยอดจากสัปดาห์ก่อนอย่างไร</div>
+  <ul style="margin:0">
+    <li><b>Lab 10</b> ใช้ local files และเรียนเรื่อง <b>Cache</b></li>
+    <li><b>Lab 11</b> ใช้ <b>Session State</b> เก็บสถานะของการทดลอง model</li>
+    <li><b>Lab 12</b> เปลี่ยนแหล่งข้อมูลเป็น <b>External database (Supabase)</b> โดยเป้าหมายไม่ใช่แค่เปลี่ยน <code>pd.read_csv()</code> เป็นคำสั่งโหลดจาก database แต่คือ<b>การเขียน query ให้ได้เฉพาะแถวที่ต้องการ</b></li>
+  </ul>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">1</span> ภาพรวม: ข้อมูลไหลจาก UI ถึง DataFrame อย่างไร <span class="chip w12">W12</span><span class="chip exam">★</span></h2>
+<div class="flow">
+  <div class="step"><b>1</b>Streamlit UI<br><span class="small muted">วันที่ / หมวด</span></div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Build database query<br><span class="small muted">.select .gte .eq ...</span></div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Supabase Data API<br><span class="small muted">REST</span></div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Return <u>only matching rows</u></div><div class="arrow">→</div>
+  <div class="step"><b>5</b>DataFrame<br><span class="small muted">pd.json_normalize</span></div>
+</div>
+<p>Lab แบ่งเป็น 3 Part:</p>
+<div class="grid c3">
+  <div class="card"><span class="label">Part 1 · Database Explorer</span>เชื่อม Supabase, ฝึก query, ทำ <code>run_query()</code> แบบ cache และเชื่อม UI กับ query</div>
+  <div class="card"><span class="label">Part 2 · Preprocess &amp; Persist</span>โหลดข้อมูลทั้งหมดด้วย pagination, ลบ boilerplate แล้วบันทึกลงตารางใหม่ด้วย <code>upsert</code></div>
+  <div class="card"><span class="label">Part 3 · Raw vs Processed</span>train model 2 ตัวด้วยเงื่อนไขเดียวกัน ต่างกันแค่ข้อมูล แล้วเทียบ metrics</div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">2</span> Supabase คืออะไร <span class="chip w12">W12</span><span class="chip exam">★★</span></h2>
+<p><b>Supabase</b> คือแพลตฟอร์ม <b>Backend-as-a-Service (BaaS)</b> แบบ <b>open-source</b> ที่พัฒนาบนระบบจัดการฐานข้อมูล <b>PostgreSQL</b> ออกแบบมาเพื่อช่วยให้นักพัฒนาสร้าง<b>ระบบหลังบ้าน (Backend)</b> ได้อย่างรวดเร็ว โดยไม่ต้องเขียนโค้ดโครงสร้างพื้นฐานเองทั้งหมด</p>
+<div class="callout analogy"><div class="callout-title">🏠 เปรียบเทียบง่าย ๆ</div>BaaS คือ “หลังบ้านสำเร็จรูป” แทนที่จะต้องตั้ง server, เขียน API, ทำระบบ login และที่เก็บไฟล์เอง Supabase เตรียมไว้ให้ เราแค่ออกแบบตารางแล้วเรียกใช้</div>
+
+<h3>ข้อดีของ Supabase (5 ข้อ) ★</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>ข้อดี</th><th>รายละเอียด</th></tr></thead>
+<tbody>
+<tr><td><b>1. Relational database</b></td><td>ใช้ PostgreSQL เต็มรูปแบบ (SQL) รองรับข้อมูลที่มีความสัมพันธ์ซับซ้อน และ<b>ยืดหยุ่นกว่าฐานข้อมูลแบบ NoSQL</b></td></tr>
+<tr><td><b>2. ลดเวลาเขียนโค้ด API</b></td><td>ระบบ<b>สร้าง REST และ GraphQL API ให้อัตโนมัติ</b>ทันทีตามโครงสร้างฐานข้อมูล (Database Schema) ที่ออกแบบไว้</td></tr>
+<tr><td><b>3. ไม่มี Vendor Lock-in</b></td><td>เป็น open-source และใช้ฐานข้อมูลมาตรฐาน จึง<b>ติดตั้งเองได้ (Self-host)</b> หรือย้ายไป cloud อื่นได้ง่าย</td></tr>
+<tr><td><b>4. ความปลอดภัยระดับแถว</b></td><td>ควบคุมสิทธิ์การเข้าถึงข้อมูลอย่างละเอียดผ่าน <b>Row-Level Security (RLS)</b> ของ PostgreSQL</td></tr>
+<tr><td><b>5. รองรับงานด้าน AI</b></td><td>มีส่วนขยาย <b>pgvector</b> สำหรับเก็บและค้นหาข้อมูล <b>Vector</b> ใช้กับระบบ AI และ <b>RAG (Retrieval-Augmented Generation)</b></td></tr>
+</tbody></table></div>
+
+<h3>ฟีเจอร์หลัก</h3>
+<div class="grid c3 feat-grid">
+  <div class="card"><span class="label">Database</span>PostgreSQL ประสิทธิภาพสูง พร้อมใช้งานทันที</div>
+  <div class="card"><span class="label">Authentication</span>สมัครสมาชิก/เข้าสู่ระบบ รองรับ email, password และ <b>OAuth</b> (Google, GitHub)</div>
+  <div class="card"><span class="label">Storage</span>จัดเก็บไฟล์สื่อและเอกสาร รองรับไฟล์ขนาดใหญ่</div>
+  <div class="card"><span class="label">Realtime</span>sync ข้อมูลระหว่าง database กับแอปแบบทันทีผ่าน <b>WebSockets</b></div>
+  <div class="card"><span class="label">Edge Functions</span>ประมวลผลโค้ดฝั่ง <b>Serverless</b> ที่กระจายอยู่ใกล้ผู้ใช้ทั่วโลก</div>
+  <div class="card"><span class="label">ที่ใช้ใน Lab</span>Database + Data API (REST) ผ่าน Python client <code>supabase</code></div>
+</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ความต้องการนี้ใช้ฟีเจอร์ไหนของ Supabase?</div>
+  <div class="sim-body"><div id="sortFeature"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">3</span> Section 1: สร้าง Supabase Project <span class="chip w12">W12</span></h2>
+<p>Lab สร้างฐานข้อมูลจำลองด้วยข้อมูล IT Help Desk Ticket จากไฟล์ <code>helpdesk_tickets_timestamped.csv</code> และ <code>helpdesk_validation_queries.csv</code></p>
+<ol class="steps">
+  <li>เข้า <code>https://supabase.com/</code> → <b>Start your project</b> (ยังไม่มี account ให้ Sign up)</li>
+  <li>กด <b>New project</b></li>
+  <li>กรอกข้อมูล: <b>Organization</b>: Applied AI for IT · <b>Project name</b>: <code>lab12_database_connection</code> · <b>Database password</b>: ตั้งเอง · <b>Region</b>: <b>Singapore</b> (ใกล้ที่สุด → latency ต่ำ) · ติ๊ก <b>Enable Data API</b> → <b>Create new project</b></li>
+  <li>เมื่อสร้างเสร็จจะเข้าสู่หน้า <b>Dashboard</b> ของ project</li>
+</ol>
+<div class="callout tip"><div class="callout-title">💡 ทำไมต้อง Enable Data API</div>แอป Streamlit คุยกับ database ผ่าน <b>Data API</b> (REST API ที่ Supabase สร้างให้อัตโนมัติจาก schema) ถ้าไม่เปิด Python client จะ query ไม่ได้</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">4</span> Section 2: สร้างตาราง &amp; Row-Level Security <span class="chip w12">W12</span><span class="chip exam">★</span></h2>
+<ol class="steps">
+  <li>เมนู <b>Database</b> → <b>Tables</b> → <b>+ New table</b></li>
+  <li>Name: <code>helpdesk_tickets</code> และ <b>Uncheck “Enable Row Level Security (RLS)”</b></li>
+  <li><b>Import data from CSV</b> → เลือก <code>helpdesk_tickets_timestamped.csv</code> → ตั้ง <code>ticket_id</code> เป็น <b>Primary key</b> และ <code>created_at</code> เป็นชนิด <b>timestamp</b> → Save</li>
+  <li>ทำแบบเดียวกันกับตาราง <code>helpdesk_validation</code> จาก <code>helpdesk_validation_queries.csv</code> โดยให้ <code>query_id</code> เป็น Primary key</li>
+  <li>ตรวจข้อมูลด้วย <b>View in Table Editor</b></li>
+</ol>
+
+<h3>Row-Level Security (RLS) คืออะไร ★</h3>
+<p><b>RLS</b> คือฟีเจอร์ของ PostgreSQL ที่ควบคุมสิทธิ์การเข้าถึงข้อมูล<b>ระดับแถว (Row)</b> โดยกำหนด <b>Policy</b> ว่าผู้ใช้แต่ละประเภททำ <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code> กับแถวใดได้บ้าง เช่น ผู้ใช้เห็นเฉพาะข้อมูลของตัวเอง ส่วนผู้ดูแลระบบเห็นทั้งหมด</p>
+<div class="compare">
+  <div class="b"><span class="label">ใน Lab: ปิด RLS</span><p>เพราะ<b>ยังไม่มีระบบ Authentication</b> และข้อมูลเป็น<b>ข้อมูลจำลอง</b> จึงปิดเพื่อให้ฝึกเชื่อมต่อและ query ได้ง่าย</p></div>
+  <div class="a"><span class="label">ระบบจริง (Production)</span><p>ถ้ามีผู้ใช้หลายประเภทหรือข้อมูลที่ต้องควบคุมสิทธิ์ <b>ควรเปิด RLS และกำหนด Policy</b> ให้เหมาะสม</p></div>
+</div>
+<div class="callout tip"><div class="callout-title">🔑 Primary key สำคัญอย่างไร</div><code>ticket_id</code> / <code>query_id</code> เป็นค่าไม่ซ้ำที่ระบุแต่ละแถว ใช้เรียงข้อมูลให้คงที่ตอนทำ pagination และใช้เป็น <b>conflict key</b> ของ <code>upsert()</code> ใน Part 2 ส่วน <code>created_at</code> ต้องเป็น <b>timestamp</b> จึงจะกรองช่วงวันที่ด้วย <code>gte</code>/<code>lt</code> ได้ถูกต้อง</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">5</span> Section 3: เชื่อม Streamlit กับ Supabase (Keys, Secrets, GRANT) <span class="chip w12">W12</span><span class="chip exam">★★★</span></h2>
+<ol class="steps">
+  <li><b>Project Settings → API Keys</b>: คัดลอก <b>Publishable key</b> (<code>sb_publishable_...</code>) <b>เท่านั้น</b></li>
+  <li><b>Integration → Data API</b>: คัดลอก <b>API URL</b> รูปแบบ <code>https://xxxxxxxxxxxxxxxxxxxx.supabase.co</code></li>
+  <li>เก็บค่าทั้งสองใน <code>.streamlit/secrets.toml</code> เพื่อ<b>แยก configuration ออกจาก source code</b> (best practice ด้านความปลอดภัย)</li>
+  <li><b>SQL Editor</b>: ให้สิทธิ์ role <code>anon</code> อ่านตาราง แล้วกด Save และ Run</li>
+</ol>
+
+<div class="compare">
+  <div class="good"><span class="label">✔ Publishable key · sb_publishable_…</span><p>key สิทธิ์ต่ำ request จะทำงานในนาม role <b>anon</b> ซึ่งทำได้แค่สิ่งที่เรา <code>GRANT</code> ให้ (และที่ RLS/Policy อนุญาต) <b>ใช้ใน Lab นี้</b></p></div>
+  <div class="bad"><span class="label">✘ Secret key / Service Role key · sb_secret_…</span><p>มี<b>สิทธิ์ระดับสูง</b> และ<b>ข้าม RLS ได้</b> ถ้าหลุดออกไป คนอื่นจะทำอะไรกับ database ก็ได้ <b>ห้ามใช้ใน Lab นี้</b></p></div>
+</div>
+
+<script type="text/plain" class="code" data-lang="toml" data-title=".streamlit/secrets.toml">
+supabase_url = "https://xxxxxxxxxxxxxxxxxxxx.supabase.co"   ##! Project URL จากหน้า Data API ต้องลงท้ายด้วย `.supabase.co` (ถ้าใส่ผิดจะเจอ `Invalid path specified`)
+supabase_key = "sb_publishable_xxxxxxxxxxxxxxxx"           ##! Publishable key เท่านั้น ห้ามใส่ secret/service-role key และห้าม commit ไฟล์นี้ขึ้น GitHub (W13)
+</script>
+<p class="small muted">ชื่อ key ต้องตรงกับที่โค้ดอ่าน (<code>st.secrets["supabase_url"]</code>, <code>st.secrets["supabase_key"]</code>) ถ้าไม่ตรงจะเกิด <code>KeyError</code></p>
+
+<script type="text/plain" class="code" data-lang="sql" data-title="Supabase SQL Editor">
+GRANT SELECT ON TABLE           -- ให้สิทธิ์ “อ่าน” (SELECT) ##! `GRANT` = ให้สิทธิ์ `SELECT` = อ่านข้อมูลอย่างเดียว (ไม่รวม INSERT/UPDATE/DELETE)
+    public.helpdesk_tickets,    ##! ตารางใน schema `public` ที่แอปต้องอ่าน
+    public.helpdesk_validation
+TO anon;                        ##! `anon` = Anonymous role คือ request ที่มาจาก publishable key ถ้าไม่ GRANT จะเจอ `permission denied`
+</script>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ปลอดภัยไหม? (key / ไฟล์ / การตั้งค่า)</div>
+  <div class="sim-body"><div id="sortKeys"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">6</span> Section 0 (โค้ด): สร้างและ cache Supabase client <span class="chip w12">W12</span><span class="chip exam">★★</span></h2>
+<script type="text/plain" class="code" data-title="Lab 12 · main.py — Section 0">
+from supabase import Client, create_client       ##! `create_client` ใช้สร้าง client, `Client` ใช้เป็น type hint
+
+@st.cache_resource(                               ##! client เป็น **resource** (connection object) จึงใช้ `cache_resource`: สร้างครั้งเดียว แล้ว reuse ข้าม rerun และข้าม session
+    show_spinner="Connecting to Supabase...",     ##! ข้อความ spinner ตอน cache miss (ครั้งแรก)
+    show_time=True,                               ##! แสดงเวลาที่ใช้สร้าง cache
+)
+def init_connection() -> Client:
+    url: str = st.secrets["supabase_url"]         ##! อ่านค่าจาก `.streamlit/secrets.toml` (บน cloud อ่านจาก Secrets ของ Streamlit Community Cloud โดยใช้โค้ดเดิม)
+    key: str = st.secrets["supabase_key"]
+    return create_client(url, key)                ##! สร้าง Supabase client ที่ใช้ส่ง request ไปยัง Data API
+
+supabase = init_connection()                      ##! เรียกทุก rerun แต่หลังครั้งแรกเป็น cache **HIT** จึงได้ client ตัวเดิมทันที
+</script>
+<div class="compare">
+  <div class="bad"><span class="label">Without resource cache</span><p class="mono">Rerun → create client<br>Rerun → create client<br>Rerun → create client</p><p>สร้าง resource เดิมซ้ำโดยไม่จำเป็นทุกครั้งที่ผู้ใช้เปลี่ยน widget</p></div>
+  <div class="good"><span class="label">With resource cache</span><p class="mono">First run → create client<br>Rerun → reuse client<br>Rerun → reuse client</p><p>สร้างครั้งเดียว ใช้ซ้ำได้เรื่อย ๆ</p></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">7</span> Section 1: ฝึกเขียน Supabase Query (Query 1–5) <span class="chip w12">W12</span><span class="chip exam">★★★</span></h2>
+<p>อ่าน query chain <b>จากซ้ายไปขวา / บนลงล่าง</b> แต่ละ method ตอบคำถามหนึ่งข้อ:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Method</th><th>ตอบคำถาม</th><th>SQL ที่เทียบเท่า</th></tr></thead>
+<tbody>
+<tr><td><code>.table("helpdesk_tickets")</code></td><td>ใช้ตารางไหน?</td><td><code>FROM helpdesk_tickets</code></td></tr>
+<tr><td><code>.select("ticket_id, category")</code></td><td>ต้องการคอลัมน์อะไร? (<code>"*"</code> = ทุกคอลัมน์)</td><td><code>SELECT ticket_id, category</code></td></tr>
+<tr><td><code>.eq()</code> <code>.gte()</code> <code>.lt()</code></td><td>ต้องการแถวไหน? (filter)</td><td><code>WHERE col = / &gt;= / &lt; ...</code></td></tr>
+<tr><td><code>.order("created_at", desc=True)</code></td><td>เรียงอย่างไร?</td><td><code>ORDER BY created_at DESC</code></td></tr>
+<tr><td><code>.limit(10)</code></td><td>ต้องการกี่แถว?</td><td><code>LIMIT 10</code></td></tr>
+<tr><td><code>.execute()</code></td><td><b>ส่ง request</b> ไปยัง Supabase (ก่อนหน้านี้แค่ประกอบ query)</td><td>—</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Filter</th><th>ย่อมาจาก</th><th>ความหมาย</th></tr></thead>
+<tbody>
+<tr><td><code>.eq(col, v)</code></td><td>equal</td><td><code>col = v</code></td></tr>
+<tr><td><code>.gte(col, v)</code></td><td>greater than or equal</td><td><code>col &gt;= v</code></td></tr>
+<tr><td><code>.lt(col, v)</code></td><td>less than</td><td><code>col &lt; v</code></td></tr>
+<tr><td><code>.lte</code> / <code>.gt</code> / <code>.neq</code></td><td>(เพิ่มเติม)</td><td><code>&lt;=</code> / <code>&gt;</code> / <code>!=</code></td></tr>
+</tbody></table></div>
+
+<script type="text/plain" class="code" data-title="Lab 12 · Query 1–5">
+# Query 1 — Preview 10 tickets
+preview_response = (
+    supabase
+    .table(TABLE_NAME)            ##! `TABLE_NAME = "helpdesk_tickets"`
+    .select("*")                  ##! ทุกคอลัมน์
+    .limit(10)                    ##! แค่ 10 แถว ใช้ดูตัวอย่าง
+    .execute()                    ##! ส่ง request จริง ได้ response object กลับมา
+)
+preview_df = pd.json_normalize(preview_response.data)   ##! `response.data` เป็น **list ของ dict** (1 dict = 1 แถว) `json_normalize` แปลงเป็น DataFrame
+
+# Query 2 — Select only required columns
+recent_response = (
+    supabase.table(TABLE_NAME)
+    .select("ticket_id, created_at, category")   ##! เลือกเฉพาะคอลัมน์ที่ใช้ ลดข้อมูลที่ส่งกลับ
+    .order("created_at", desc=True)              ##! ใหม่ → เก่า
+    .limit(10)
+    .execute()
+)
+
+# Query 3 — Filter by Date range (January 2026)
+january_response = (
+    supabase.table(TABLE_NAME).select("*")
+    .gte("created_at", "2026-01-01")             ##! created_at >= 1 ม.ค. 00:00
+    .lt("created_at", "2026-02-01")              ##! created_at < 1 ก.พ. 00:00 → ได้ทุกเวลาของเดือนมกราคม
+    .execute()
+)
+
+# Query 4 — Filter by Category
+network_response = (
+    supabase.table(TABLE_NAME).select("*")
+    .eq("category", "Network")                   ##! เฉพาะหมวด Network
+    .order("created_at", desc=True)
+    .limit(20)
+    .execute()
+)
+
+# Query 5 — Combine multiple conditions
+combined_response = (
+    supabase.table(TABLE_NAME).select("*")
+    .gte("created_at", "2026-01-01")             ##! เงื่อนไขหลายตัวที่ chain ต่อกัน = **AND**
+    .lt("created_at", "2026-02-01")
+    .eq("category", "Network")
+    .order("created_at", desc=True)
+    .execute()
+)
+</script>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Query Builder: ประกอบ query → ดูโค้ด Python, SQL และผลลัพธ์</div>
+  <div class="sim-body">
+    <p class="howto">ข้อมูลตัวอย่าง 80 แถว (สุ่มกระจายจาก 2,080 tickets จริง ช่วง ม.ค.–ก.ย. 2026) ลองเปลี่ยนเงื่อนไข แล้วลองสลับโหมดวันที่เป็น <b>“<code>.lte(end_date)</code> (บั๊ก)”</b> จะเห็นว่า ticket ของวันสุดท้ายหายไป เพราะเกือบทุก ticket ถูกสร้างเวลา 09:00 ซึ่งเลย 00:00 ไปแล้ว</p>
+    <div class="qb-grid">
+      <label>คอลัมน์ (select)<br>
+        <span class="small"><label style="display:inline"><input type="checkbox" class="qbCol" value="ticket_id" checked> ticket_id</label> <label style="display:inline"><input type="checkbox" class="qbCol" value="created_at" checked> created_at</label> <label style="display:inline"><input type="checkbox" class="qbCol" value="category" checked> category</label> <label style="display:inline"><input type="checkbox" class="qbCol" value="text"> text</label></span></label>
+      <label>Start date<input type="date" id="qbStart" value="2026-01-01" min="2026-01-01" max="2026-09-16"></label>
+      <label>End date<input type="date" id="qbEnd" value="2026-01-28" min="2026-01-01" max="2026-09-16"></label>
+      <label>Category<select id="qbCat"><option>All</option><option>Account &amp; Access</option><option>Network</option><option>Software</option><option>Hardware &amp; Peripherals</option></select></label>
+      <label>Order<select id="qbOrder"><option value="desc">created_at desc=True</option><option value="asc">created_at (เก่า→ใหม่)</option><option value="none">ไม่เรียง</option></select></label>
+      <label>Limit (ว่าง = ไม่จำกัด)<input type="number" id="qbLimit" min="1" max="80" value="5"></label>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <div class="seg" id="qbDateMode"><button type="button" class="on" data-m="ok">.lt(end_date + 1 วัน) ✔</button><button type="button" data-m="bug">.lte(end_date) (บั๊ก)</button></div>
+    </div>
+    <div class="grid c2">
+      <div id="qbPy"></div>
+      <div id="qbSql"></div>
+    </div>
+    <div class="row" style="margin:6px 0 10px">
+      <span class="stat">Matching tickets (count="exact"): <b id="qbCount">0</b></span>
+      <span class="stat">Rows returned: <b id="qbRows">0</b></span>
+      <span class="small muted" id="qbNote"></span>
+    </div>
+    <div class="table-wrap res-table"><table id="qbTable"></table></div>
+  </div>
+</div>
+
+<h3>รัน Query practice เฉพาะเมื่อกดปุ่ม</h3>
+<script type="text/plain" class="code" data-title="Lab 12 · show_query_practice()">
+def show_query_practice():
+    # ... ย้าย Query 1–5 ที่ทำเสร็จแล้วมาไว้ในฟังก์ชันนี้ ##! ห่อ query ฝึกหัดไว้ในฟังก์ชัน แล้ว**ลบ**ของเดิมที่อยู่นอกฟังก์ชันออก ไม่งั้นจะถูก execute ซ้ำ
+    ...
+
+with st.expander("Database query practice", expanded=False):
+    if st.button("Run practice queries", key="run_query_practice"):   ##! ปุ่มเป็น True เฉพาะรอบที่กด → query 5 ตัวรันเฉพาะตอนผู้ใช้ขอ
+        show_query_practice()
+</script>
+<div class="callout key"><div class="callout-title">💡 ทำไมต้องซ่อนไว้หลังปุ่ม</div>ถ้า query ทั้ง 5 อยู่ระดับบนสุดของสคริปต์ <b>ทุก rerun</b> (ทุกครั้งที่ขยับ widget) จะยิง request 5 ครั้งไปที่ database ทั้งที่ query ฝึกหัดมีไว้แค่ตรวจและให้คะแนน การวางไว้หลังปุ่มทำให้รันเฉพาะเมื่อกด (เชื่อมกับ rerun model ของ W9)</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">8</span> Section 2: <code>run_query()</code> แบบ reusable + cache <span class="chip w12">W12</span><span class="chip exam">★★★</span></h2>
+<p>จาก Query 5 เราเปลี่ยนค่าที่เคย hard-code (<code>2026-01-01</code>, <code>2026-02-01</code>, <code>Network</code>) ให้กลายเป็น <b>function arguments</b> เพื่อให้รับค่าจาก UI ได้</p>
+<script type="text/plain" class="code" data-title="Lab 12 · Section 2 — run_query()">
+@st.cache_data(                                   ##! ผลลัพธ์เป็น **data** ที่อาจเปลี่ยนเมื่อ database เปลี่ยน จึงใช้ `cache_data` (ไม่ใช่ cache_resource)
+    ttl=600,                                      ##! time-to-live 600 วินาที = 10 นาที หลังจากนั้น entry หมดอายุแล้ว query ใหม่ ป้องกันข้อมูล stale นานเกินไป
+    show_spinner="Querying helpdesk tickets...",
+    show_time=True,
+)
+def run_query(start_date, end_date, category):    ##! cache key = ฟังก์ชัน + ค่า arguments (start, end, category)
+    end_exclusive = end_date + timedelta(days=1)  ##! วันถัดจาก End date เพื่อใช้กับ `.lt` (รวมทุกเวลาของ End date)
+
+    query = (
+        supabase
+        .table(TABLE_NAME)
+        .select("*", count="exact")               ##! `count="exact"` ให้ database นับ **จำนวนแถวที่ตรงเงื่อนไขทั้งหมด** แยกจากแถวที่ส่งกลับจริง
+        .gte("created_at", start_date.isoformat())   ##! `.isoformat()` แปลง date เป็น string รูปแบบ `YYYY-MM-DD`
+        .lt("created_at", end_exclusive.isoformat())
+    )
+
+    if category != "All":                         ##! "All" = ไม่กรองหมวด เพิ่ม `.eq` เฉพาะเมื่อเลือกหมวดจริง
+        query = query.eq("category", category)    ##! query builder เป็น object ที่ chain ต่อได้ จึง assign กลับเข้า `query`
+
+    response = query.execute()
+    return response.data, response.count          ##! คืน tuple: (list ของแถว, จำนวนที่ match ทั้งหมด)
+</script>
+
+<h3>ทำไมต้อง <code>end_date + 1 วัน</code> แล้วใช้ <code>&lt;</code> ★</h3>
+<p>วันที่จาก <code>st.date_input</code> <b>ไม่มีส่วนเวลา</b> แต่ <code>created_at</code> มีทั้งวันและเวลา ถ้าใช้ <code>created_at &lt;= end_date</code> ขอบเขตจะเป็น <code>00:00:00</code> ของ End date ทำให้ ticket ที่เกิดระหว่างวันนั้นถูกตัดออก</p>
+<div class="compare">
+  <div class="bad"><span class="label">ผิด</span><p class="mono">created_at &lt;= 2026-01-31 00:00:00</p><p>ticket 31 ม.ค. 09:00 <b>หายไป</b></p></div>
+  <div class="good"><span class="label">ถูก</span><p class="mono">created_at &gt;= 2026-01-01 00:00:00<br>created_at &lt;  2026-02-01 00:00:00</p><p>รวมทุกเวลาของวันสุดท้าย แต่ไม่รวมวันถัดไป</p></div>
+</div>
+
+<h3>Cache behavior ของ <code>run_query()</code> ★</h3>
+<div class="flow">
+  <div class="step"><b>Jan 1–31 + Network</b>→ cached result A</div><div class="arrow">→</div>
+  <div class="step"><b>Jan 1–31 + Software</b>→ cached result B</div><div class="arrow">→</div>
+  <div class="step"><b>Jan 1–31 + Network</b>→ reuse result A (HIT)</div>
+</div>
+<div class="callout key"><div class="callout-title">💡 สาระสำคัญ</div>Cache นี้ <b>ไม่ได้ผูกกับ browser session เดียว</b> แต่ผูกกับ <b>Function + Arguments + cache state ของ Application</b> ผู้ใช้คนอื่นที่เลือกเงื่อนไขเดียวกันก็ได้ cache hit ด้วย (ต่างจาก session_state ใน W11)</div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Cache ของ <code>run_query()</code> + ปุ่ม Refresh</div>
+  <div class="sim-body">
+    <p class="howto">เลือกเงื่อนไขแล้วกด <b>Rerun</b> เพื่อให้สคริปต์เรียก <code>init_connection()</code> และ <code>run_query()</code> ลองกดเงื่อนไขเดิมซ้ำ ลองเลื่อนเวลาให้เกิน TTL และลองกด <b>Refresh database data</b></p>
+    <div class="row" style="margin-bottom:10px">
+      <select id="cdRange"><option value="Jan">2026-01-01 → 2026-01-31</option><option value="Feb">2026-02-01 → 2026-02-28</option></select>
+      <select id="cdCat"><option>All</option><option>Network</option><option>Software</option></select>
+      <button class="btn primary" type="button" id="cdRun">Rerun (เรียก run_query)</button>
+      <button class="btn" type="button" id="cdTime">⏩ เวลาผ่านไป 5 นาที</button>
+      <button class="btn danger" type="button" id="cdRefresh">Refresh database data</button>
+    </div>
+    <div class="grid c2">
+      <div class="panel"><span class="label">init_connection() · cache_resource</span><div id="cdClient" class="mono">ยังไม่ได้สร้าง</div>
+        <span class="label" style="margin-top:10px">run_query() · cache_data(ttl=600)</span><div id="cdEntries" class="mono">(ว่าง)</div></div>
+      <div class="panel"><span class="label">Log (เวลาจำลอง <span id="cdClock">0:00</span>)</span><div id="cdLog" class="out log"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">9</span> Section 3: เชื่อม UI กับ Database query <span class="chip w12">W12</span><span class="chip exam">★</span></h2>
+<h3>3.1 อ่านขอบเขตวันที่จาก Database</h3>
+<p>ก่อนสร้าง date widget ต้องรู้ว่าข้อมูลเริ่มและจบวันไหน เพื่อไม่ให้ผู้ใช้เลือกวันที่ที่ไม่มีข้อมูล <b>ไม่ต้องดาวน์โหลดทุกแถวเพื่อหา min/max</b> ให้ database เรียงแล้วเอาแถวแรกแทน</p>
+<script type="text/plain" class="code" data-title="Lab 12 · load_date_bounds()">
+@st.cache_data(ttl=600, show_spinner="Loading date boundaries...", show_time=True)
+def load_date_bounds():
+    first_response = (
+        supabase.table(TABLE_NAME)
+        .select("created_at")
+        .order("created_at")                  ##! เรียงเก่า → ใหม่ (default ascending)
+        .limit(1)                             ##! เอาแถวแรก = วันที่เก่าที่สุด
+        .execute()
+    )
+    last_response = (
+        supabase.table(TABLE_NAME)
+        .select("created_at")
+        .order("created_at", desc=True)       ##! เรียงใหม่ → เก่า
+        .limit(1)                             ##! แถวแรก = วันที่ใหม่ที่สุด
+        .execute()
+    )
+    min_date = pd.to_datetime(first_response.data[0]["created_at"]).date()   ##! `.data[0]` = dict ของแถวแรก แปลง string → datetime → `.date()` ตัดเวลาออก
+    max_date = pd.to_datetime(last_response.data[0]["created_at"]).date()
+    return min_date, max_date
+
+DATA_MIN_DATE, DATA_MAX_DATE = load_date_bounds()   ##! unpack tuple เป็นสองตัวแปร ใช้เป็น min/max ของ date widgets
+</script>
+
+<h3>3.2–3.3 Widgets + Validation</h3>
+<script type="text/plain" class="code" data-title="Lab 12 · Query filters">
+default_end_date = min(
+    DATA_MIN_DATE + timedelta(days=27),       ##! ช่วง 28 วัน **นับรวมวันแรก** จึงบวก 27 (ไม่ใช่ 28)
+    DATA_MAX_DATE,                            ##! `min(...)` กันไม่ให้เกินวันสุดท้ายของข้อมูล
+)
+with st.expander("Query filters", expanded=True):
+    start_col, end_col, category_col = st.columns(3)
+    with start_col:
+        start_date = st.date_input("Start date", value=DATA_MIN_DATE,
+                                   min_value=DATA_MIN_DATE, max_value=DATA_MAX_DATE)   ##! จำกัดให้เลือกได้เฉพาะช่วงที่มีข้อมูล
+    with end_col:
+        end_date = st.date_input("End date", value=default_end_date,
+                                 min_value=DATA_MIN_DATE, max_value=DATA_MAX_DATE)
+    with category_col:
+        category = st.selectbox("Category", CATEGORIES)   ##! CATEGORIES = ["All", "Account & Access", "Network", "Software", "Hardware & Peripherals"]
+
+if start_date > end_date:
+    st.error("Start date cannot be later than End date. ...")   ##! แจ้งผู้ใช้ว่าช่วงวันที่ผิด
+    st.stop()                                 ##! **หยุด run นี้ทันที** บรรทัดหลังจากนี้ไม่ถูกรัน จึงไม่มีการ query database ด้วยช่วงที่ผิด
+</script>
+
+<h3>3.4–3.6 เรียก query, Refresh และแสดงผล</h3>
+<script type="text/plain" class="code" data-title="Lab 12 · Section 3.4–3.6">
+records, matching_count = run_query(start_date, end_date, category)   ##! ส่งค่าจาก widget เข้า cached query function
+df = pd.json_normalize(records)
+if "created_at" in df.columns:
+    df["created_at"] = pd.to_datetime(df["created_at"])   ##! แปลง string เป็น datetime (ถ้าผลว่างจะไม่มีคอลัมน์นี้ จึงเช็กก่อน)
+
+if st.button("Refresh database data"):
+    load_date_bounds.clear()                  ##! ล้าง cache ของ **ฟังก์ชันนี้** เท่านั้น
+    run_query.clear()
+    st.rerun()                                ##! สั่ง rerun ทันที → สองฟังก์ชันบนจะ cache MISS แล้ว query ข้อมูลสดจาก Supabase (ไม่ clear `init_connection` เพราะ client ยัง reuse ได้)
+
+matching_count = matching_count if matching_count is not None else len(df)   ##! กันกรณี count เป็น None
+ticket_col, loaded_col, category_metric_col = st.columns(3)
+ticket_col.metric("Matching Tickets", matching_count)   ##! จำนวนที่ตรงเงื่อนไขทั้งหมด (จาก count="exact")
+loaded_col.metric("Rows returned", len(df))             ##! จำนวนแถวที่ได้กลับมาจริง
+category_metric_col.metric("Selected Category", category)
+
+if len(df) < matching_count:
+    st.warning("More tickets matched the query than were returned. "
+               "Use a narrower filter or pagination ...")   ##! Data API จำกัดจำนวนแถวต่อ request ถ้าต้องการครบให้ narrow filter หรือใช้ pagination
+</script>
+<div class="flow">
+  <div class="step"><b>1</b>กด Refresh database data</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Clear cached query results</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Rerun Streamlit</div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Reuse Supabase client</div><div class="arrow">→</div>
+  <div class="step"><b>5</b>Query fresh data</div>
+</div>
+
+<h3>Section 4: Database Query Challenge ★</h3>
+<p>โจทย์: ดึง <b>5 tickets ล่าสุด</b> ตามช่วงวันที่และหมวดที่เลือก โดย<b>ต้อง filter, sort, limit ที่ database</b> ห้ามโหลดทั้งตารางแล้วเลือก 5 แถวด้วย Pandas</p>
+<script type="text/plain" class="code" data-title="Lab 12 · TODO 11">
+challenge_end_exclusive = end_date + timedelta(days=1)
+challenge_query = (
+    supabase.table(TABLE_NAME)
+    .select("ticket_id, created_at, category, text")   ##! เฉพาะ 4 คอลัมน์ที่โจทย์ต้องการ
+    .gte("created_at", start_date.isoformat())
+    .lt("created_at", challenge_end_exclusive.isoformat())   ##! รวมทุกเวลาของ End date
+)
+if category != "All":
+    challenge_query = challenge_query.eq("category", category)   ##! All → ไม่ใส่ filter หมวด
+challenge_response = (
+    challenge_query
+    .order("created_at", desc=True)            ##! ใหม่สุดก่อน
+    .limit(5)                                  ##! database ส่งมาแค่ 5 แถว
+    .execute()
+)
+challenge_df = pd.json_normalize(challenge_response.data)
+</script>
+<div class="compare">
+  <div class="good"><span class="label">Filter ที่ Database ✔</span><p>database ส่งกลับมาแค่แถวที่ต้องการ เร็ว ประหยัด network/memory และไม่ชน row limit</p></div>
+  <div class="bad"><span class="label">โหลดทั้งตารางแล้ว Filter ใน Pandas ✘</span><p>ดึงทุกแถวมาทิ้งเกือบหมด ช้าและเปลือง และถ้าตารางใหญ่เกิน row limit จะได้ข้อมูลไม่ครบ ผลจึงผิดโดยไม่รู้ตัว</p></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">10</span> Part 2: โหลดข้อมูลทั้งหมดด้วย Pagination <span class="chip w12">W12</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>Part 2 เปลี่ยนคำถามจาก <b>“How do we retrieve the data?”</b> เป็น <b>“What should we do with the data before using it to train an AI model?”</b> โดยต้องโหลด training data <b>ทั้งหมด</b> (ยังไม่ใช้ <code>helpdesk_validation</code> ซึ่งเก็บไว้ประเมินใน Part 3)</p>
+<div class="flow">
+  <div class="step"><b>Raw</b>helpdesk_tickets</div><div class="arrow">→</div>
+  <div class="step"><b>Load</b>ทั้งหมด</div><div class="arrow">→</div>
+  <div class="step"><b>Remove</b>boilerplate</div><div class="arrow">→</div>
+  <div class="step"><b>Student</b>preprocessing</div><div class="arrow">→</div>
+  <div class="step"><b>Compare</b>Raw vs Processed</div><div class="arrow">→</div>
+  <div class="step"><b>Save</b>helpdesk_tickets_processed</div>
+</div>
+<p>Supabase Data API อาจ<b>จำกัดจำนวนแถวต่อ request</b> จึงห้ามสมมติว่า request เดียวได้ครบ ต้อง query <b>ทีละช่วง (page)</b> ด้วย <code>.range(start, end)</code> แล้วนำมารวมกัน</p>
+<script type="text/plain" class="code" data-title="Lab 12 · load_all_training_tickets()">
+@st.cache_data(ttl=600, show_spinner="Loading complete training data...", show_time=True)
+def load_all_training_tickets():
+    page_size = 1000
+    start = 0
+    records = []
+    while True:
+        response = (
+            supabase.table(TABLE_NAME)
+            .select("ticket_id, created_at, text, category")
+            .order("ticket_id")                         ##! เรียงด้วย primary key ให้ลำดับคงที่ แต่ละหน้าจึงไม่ซ้ำและไม่ตกหล่น
+            .range(start, start + page_size - 1)        ##! `.range(0, 999)` = แถวตำแหน่ง 0 ถึง 999 (**รวมทั้งสองปลาย**) จึงต้อง `-1`
+            .execute()
+        )
+        batch = response.data
+        records.extend(batch)                           ##! ต่อ list ของหน้านี้เข้ากับผลรวม
+        if len(batch) < page_size:                      ##! ได้น้อยกว่า page_size แสดงว่าเป็น **หน้าสุดท้าย** → ออกจาก loop
+            break
+        start += page_size                              ##! เลื่อนไปหน้าถัดไป
+    return pd.json_normalize(records)
+</script>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Pagination: 2,080 แถว, page_size = 1000</div>
+  <div class="sim-body">
+    <div class="row" style="margin-bottom:10px"><label>จำนวนแถวในตาราง <input type="number" id="pgTotal" value="2080" min="0" max="10000" style="width:100px"></label><label>page_size <input type="number" id="pgSize" value="1000" min="1" max="5000" style="width:90px"></label><button class="btn primary" type="button" id="pgRun">เรียก load_all_training_tickets()</button></div>
+    <div id="pgRows"></div>
+    <div class="out" id="pgOut" style="margin-top:10px">records = []</div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">11</span> Part 2: ทำไมต้อง Preprocess และลบ Boilerplate <span class="chip w12">W12</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>เป้าหมายของ model คือ <b>ทำนาย category จาก technical problem</b> ใน ticket เช่น “cannot connect to Wi-Fi” หรือ “printer is not detected” แต่ ticket บางรายการมีข้อความที่เป็นแค่<b>รูปแบบการเขียน message</b> เช่น greeting, closing หรือ signature</p>
+<div class="callout warn"><div class="callout-title">⚠ ปัญหา Shortcut signal</div>model ใช้ <b>TF-IDF</b> ซึ่งเรียนจากคำและคู่คำ มันไม่รู้ว่า phrase ไหนเป็นแค่รูปแบบการเขียน ถ้า boilerplate บังเอิญพบในบาง category บ่อยกว่า category อื่น model อาจจำ phrase นั้นเป็น <b>shortcut signal</b> แทนที่จะเรียนจากปัญหาจริง</div>
+<div class="callout exam"><div class="callout-title">★ ประโยคสำคัญ</div><b>Preprocessing ไม่ได้ทำให้ model performance ดีขึ้นโดยอัตโนมัติ</b> การลบข้อมูลอาจลด noise แต่ก็อาจลบ information ที่มีประโยชน์ไปด้วย จึงต้องเก็บ raw data เป็น <b>baseline</b> แล้วทดลองเทียบจริงใน Part 3</div>
+<script type="text/plain" class="code" data-title="Lab 12 · preprocess_tickets()">
+def preprocess_tickets(df):
+    result = df.copy()                                   ##! ทำงานบนสำเนา ไม่แก้ raw DataFrame ต้นฉบับ
+    result["text"] = (
+        result["text"].fillna("").astype(str)            ##! แทนค่าว่าง (NaN) ด้วย "" และบังคับเป็น string ก่อนใช้ `.str`
+        .str.replace(
+            r"^\s*(?:dear customer support(?: team)?|hello customer support|"
+            r"dear support team|to whom it may concern)\s*[:,]?\s*",   ##! `^` = ต้นข้อความ, `(?:a|b)` = ตรงอันใดอันหนึ่ง, `[:,]?` = มี `:` หรือ `,` หรือไม่มีก็ได้
+            "", case=False, regex=True,                  ##! `case=False` ไม่สนตัวพิมพ์เล็ก/ใหญ่
+        )
+    )
+    result["text"] = (
+        result["text"]
+        .str.replace(r"\s*best regards\s*[:,]?\s*(?:\[?\s*(?:your )?name\s*\]?)?\s*$",
+                     "", case=False, regex=True)         ##! `$` = ท้ายข้อความ: ลบ “Best regards, [Your Name]” ที่อยู่ท้ายสุด
+        .str.replace(r"\s*thank you(?: for your [^.?!]*)?[.!]?\s*(?:name)?\s*$",
+                     "", case=False, regex=True)         ##! ลบ “Thank you for your ...” ท้ายข้อความ
+    )
+    result["text"] = (
+        result["text"]
+        .str.replace(r"\s+", " ", regex=True)            ##! ช่องว่าง/ขึ้นบรรทัดหลายตัวติดกัน → เว้นวรรคเดียว
+        .str.strip()                                     ##! ตัดช่องว่างหัว-ท้าย (whitespace normalization)
+    )
+    return result
+</script>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ลบ Boilerplate ด้วย regex เดียวกับ Lab</div>
+  <div class="sim-body">
+    <p class="howto">แก้ข้อความด้านล่าง (หรือเลือกตัวอย่าง) แล้วดูผลหลัง preprocess ทีละขั้น</p>
+    <div class="row" style="margin-bottom:8px"><button class="btn sm" type="button" data-ex="0">ตัวอย่าง 1</button><button class="btn sm" type="button" data-ex="1">ตัวอย่าง 2</button><button class="btn sm" type="button" data-ex="2">ตัวอย่าง 3 (ไม่มี boilerplate)</button></div>
+    <textarea id="bpIn"></textarea>
+    <div id="bpSteps" style="margin-top:10px"></div>
+  </div>
+</div>
+<p><b>Student-proposed preprocessing</b> (Section 8): ให้นักศึกษาสังเกตข้อมูลแล้วเสนอวิธีเพิ่ม 1 วิธี พร้อมเหตุผล เช่น ลบแท็ก <code>&lt;br&gt;</code> และ placeholder อย่าง <code>[Your Name]</code>, <code>&lt;tel_num&gt;</code> ที่มาจาก template หรือขั้นตอน anonymization ไม่ใช่ปัญหาจริง และกระจายไม่เท่ากันระหว่าง category ซึ่งอาจกลายเป็น shortcut signal</p>
+
+<!-- ===================================================== -->
+<h2><span class="num">12</span> Part 2: บันทึกกลับ Supabase ด้วย <code>upsert()</code> <span class="chip w12">W12</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>หลักการ: <b>ไม่แก้ raw table โดยตรง</b> ให้ raw table เป็น read-only แล้วบันทึกผลลง <b>ตารางใหม่</b></p>
+<div class="flow"><div class="step"><b>helpdesk_tickets</b>READ ONLY</div><div class="arrow">→</div><div class="step"><b>preprocessing</b></div><div class="arrow">→</div><div class="step"><b>helpdesk_tickets_processed</b></div></div>
+<script type="text/plain" class="code" data-lang="sql" data-title="SQL Editor — 10.1 Create the Processed Table">
+CREATE TABLE IF NOT EXISTS public.helpdesk_tickets_processed
+(LIKE public.helpdesk_tickets INCLUDING ALL);       ##! copy โครงสร้างจาก raw table **รวม index/primary key** (`INCLUDING ALL`) → ticket_id ใช้เป็น conflict key ได้
+ALTER TABLE public.helpdesk_tickets_processed
+DISABLE ROW LEVEL SECURITY;                         ##! ปิด RLS เหมือน setup เดิม (ข้อมูลจำลอง) — production ควรใช้ Auth + RLS + Policies
+GRANT SELECT, INSERT, UPDATE
+ON TABLE public.helpdesk_tickets_processed
+TO anon;                                            ##! ตารางนี้ต้อง **เขียน** ด้วย จึงให้ INSERT, UPDATE เพิ่ม (upsert ใช้ทั้งสองอย่าง)
+</script>
+<script type="text/plain" class="code" data-title="Lab 12 · save_processed_tickets()">
+def save_processed_tickets(df, batch_size=500):
+    save_df = df[["ticket_id", "created_at", "text", "category"]].copy()
+    save_df["created_at"] = pd.to_datetime(save_df["created_at"]).dt.strftime("%Y-%m-%dT%H:%M:%S")   ##! แปลงเวลาเป็น string ISO ที่ส่งเป็น JSON ได้
+    save_df = save_df.where(pd.notna(save_df), None)     ##! NaN → None (JSON null) เพราะ NaN ส่งผ่าน API ไม่ได้
+    records = save_df.to_dict(orient="records")          ##! DataFrame → list ของ dict (1 dict ต่อแถว)
+    for start in range(0, len(records), batch_size):     ##! ส่งทีละ 500 แถว ไม่ยิงก้อนใหญ่ก้อนเดียว
+        batch = records[start:start + batch_size]
+        (
+            supabase.table(PROCESSED_TABLE_NAME)
+            .upsert(batch, on_conflict="ticket_id")      ##! **upsert** = ticket_id ยังไม่มี → INSERT, มีแล้ว → UPDATE จึงกด Save ซ้ำได้โดยไม่เพิ่มแถวซ้ำ
+            .execute()
+        )
+    return len(records)
+
+if st.button("Save processed training data", key="save_processed_training_data"):   ##! เขียน database **เฉพาะเมื่อกดปุ่ม** ไม่ใช่ทุก rerun
+    saved_count = save_processed_tickets(processed_df)
+    st.success(f"Saved {saved_count} processed training records.")
+</script>
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> insert vs upsert: กด Save หลายครั้งแล้วเกิดอะไรขึ้น?</div>
+  <div class="sim-body">
+    <p class="howto">มี processed records 4 แถว ลองกด Save ซ้ำด้วยวิธีต่าง ๆ แล้วลองปิด Primary key ดู</p>
+    <div class="row" style="margin-bottom:10px">
+      <label><input type="checkbox" id="upPk" checked> ตารางมี Primary key ที่ ticket_id</label>
+      <button class="btn" type="button" id="upEdit">แก้ข้อความ processed (v2)</button>
+      <button class="btn" type="button" id="upInsert">Save ด้วย .insert()</button>
+      <button class="btn primary" type="button" id="upUpsert">Save ด้วย .upsert(on_conflict="ticket_id")</button>
+      <button class="btn sm" type="button" id="upReset">ล้างตาราง</button>
+    </div>
+    <div class="out" id="upMsg">helpdesk_tickets_processed ว่างอยู่</div>
+    <div class="table-wrap res-table"><table id="upTable"></table></div>
+  </div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">13</span> Part 3: Raw vs Processed — Controlled Comparison <span class="chip w12">W12</span><span class="chip extra">ส่วนเสริม (Lab)</span></h2>
+<p>คำถาม: <b>Preprocessing ช่วยให้ model ดีขึ้นจริงไหม?</b> ต้องทดลองแบบ <b>controlled</b> คือ model ทั้งสองใช้ <b>settings เดียวกัน</b> (<code>NGRAM_RANGE=(1, 2)</code>, <code>REGULARIZATION_C=1.0</code>) และ <b>validation data ชุดเดียวกัน</b> โดยเปลี่ยนแค่ training data (raw vs processed)</p>
+<script type="text/plain" class="code" data-title="Lab 12 · Section 12–13">
+@st.cache_data(ttl=600, show_spinner="Loading experiment training data...", show_time=True)
+def load_training_table(table_name):                  ##! ใช้ฟังก์ชันเดียวโหลดได้ทั้ง raw และ processed (ชื่อตารางเป็น argument → cache แยกกันตามชื่อ)
+    ...                                               # pagination แบบเดียวกับ Section 5
+@st.cache_data(ttl=600, show_spinner="Loading validation data...")
+def load_validation_data():
+    response = supabase.table("helpdesk_validation").select("query, expected_category").execute()   ##! เอาเฉพาะคอลัมน์ที่ใช้ประเมิน
+    return pd.json_normalize(response.data)
+
+raw_model = train_model(tuple(raw_training_df["text"]), tuple(raw_training_df["category"]),
+                        NGRAM_RANGE, REGULARIZATION_C)   ##! `train_model` (จาก training.py) เป็น cache_resource ที่ใช้ tuple เพราะต้อง hash ได้
+processed_model = train_model(tuple(processed_training_df["text"]), tuple(processed_training_df["category"]),
+                              NGRAM_RANGE, REGULARIZATION_C)   ##! settings เหมือนกันทุกอย่าง ต่างกันแค่ข้อมูล
+raw_scores, raw_results = evaluate_model(raw_model, validation_df, raw_training_df["category"])
+</script>
+<div class="table-wrap"><table>
+<thead><tr><th>Metric</th><th>คำถามที่ metric ช่วยตอบ</th></tr></thead>
+<tbody>
+<tr><td><b>Accuracy</b></td><td>จาก validation queries ทั้งหมด model ตอบถูกกี่ส่วน</td></tr>
+<tr><td><b>Macro Precision</b></td><td>เมื่อ model ทำนายแต่ละ category คำตอบนั้นแม่นแค่ไหน (ให้น้ำหนักทุก category เท่ากัน)</td></tr>
+<tr><td><b>Macro Recall</b></td><td>ในแต่ละ category จริง model หาตัวอย่างของ category นั้นเจอได้มากเท่าไร</td></tr>
+<tr><td><b>Macro F1</b></td><td>สมดุลระหว่าง precision กับ recall ของแต่ละ category แล้วเฉลี่ยทุก category</td></tr>
+</tbody></table></div>
+<p>preprocessing อาจช่วยบาง category แต่ทำให้อีก category แย่ลง metrics จึงไม่จำเป็นต้องเปลี่ยนไปทิศทางเดียวกัน ต้องดู <b>scores by category</b> และ <b>predictions ที่เปลี่ยน</b> ประกอบ (validation set มีจำนวนเท่ากันทุก category: accuracy กับ macro recall จึงมักเท่ากัน)</p>
+<div class="callout exam"><div class="callout-title">★ Question 3: การทดลองนี้พิสูจน์อะไรได้จริง?</div>
+<p>Final processed data ผ่าน <b>2 การเปลี่ยนแปลงพร้อมกัน</b> (Remove boilerplate + Student-proposed preprocessing) แต่ทดลองเทียบแค่ <b>Raw vs Final Processed</b></p>
+<p>ถ้า performance เปลี่ยน <b>สรุปไม่ได้</b>ว่าเกิดจาก student method อย่างเดียว เพราะเปลี่ยนสองตัวแปรพร้อมกัน ถ้าจะแยกผลต้องเพิ่ม experiment เช่น <b>Raw vs Boilerplate-only vs Boilerplate + Student</b> (ablation: เปลี่ยนทีละขั้น)</p>
+<p style="margin:0">ต้องแยก “<i>We observed a performance change</i>” ออกจาก “<i>We know which preprocessing step caused it</i>”</p></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">14</span> Common mistakes &amp; debugging <span class="chip w12">W12</span><span class="chip exam">★</span></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>อาการ</th><th>สาเหตุที่เป็นไปได้</th><th>วิธีแก้/ตรวจ</th></tr></thead>
+<tbody>
+<tr><td><code>KeyError</code> ใน <code>st.secrets</code></td><td>ชื่อตัวแปรใน secrets.toml ไม่ตรง</td><td>ใช้ <code>supabase_url</code> และ <code>supabase_key</code></td></tr>
+<tr><td><code>Invalid path specified</code></td><td>API URL ไม่ใช่ Project URL</td><td>URL ควรจบที่ <code>.supabase.co</code></td></tr>
+<tr><td><code>permission denied</code></td><td><code>anon</code> ไม่มี SELECT</td><td>รัน <code>GRANT SELECT ... TO anon</code></td></tr>
+<tr><td>Query ได้ 0 rows</td><td>Filter แคบจนไม่มีข้อมูล</td><td>ลอง <code>All</code> หรือช่วงวันที่กว้างขึ้น</td></tr>
+<tr><td>ข้อมูลวันสุดท้ายหาย</td><td>ใช้ End date เป็น 00:00 กับ <code>&lt;=</code></td><td>ใช้ <code>&lt; end_date + 1 day</code></td></tr>
+<tr><td>Query เดิมไม่ request ใหม่</td><td>Cache hit</td><td>กด Refresh หรือรอ TTL</td></tr>
+<tr><td>Matching มากกว่า Rows returned</td><td>Data API จำกัดแถวต่อ request</td><td>Narrow query หรือใช้ pagination</td></tr>
+<tr><td>ตาราง processed not found</td><td>ยังไม่ได้สร้างตาราง</td><td>รัน SQL ใน Section 10.1</td></tr>
+<tr><td>Save แล้ว <code>permission denied</code></td><td><code>anon</code> ไม่มี INSERT/UPDATE</td><td><code>GRANT SELECT, INSERT, UPDATE ... TO anon</code></td></tr>
+<tr><td>Save ซ้ำแล้วจำนวนแถวเพิ่ม</td><td>upsert ไม่มี conflict key ที่ถูกต้อง</td><td>ให้ <code>ticket_id</code> เป็น Primary Key + <code>on_conflict="ticket_id"</code></td></tr>
+<tr><td>Training data ได้ไม่ครบ</td><td>Query request เดียว</td><td>ใช้ <code>.range()</code> pagination</td></tr>
+<tr><td>Processed model ใช้ข้อมูลเก่า</td><td>Cached query ยังไม่หมดอายุหลัง save ใหม่</td><td>Clear cache / รอ TTL</td></tr>
+<tr><td>เทียบ Raw/Processed ไม่ได้</td><td>settings หรือ validation ไม่เหมือนกัน</td><td>ตรวจ <code>NGRAM_RANGE</code>, <code>REGULARIZATION_C</code>, <code>validation_df</code></td></tr>
+<tr><td>สรุปว่า student method เป็นสาเหตุ</td><td>เปลี่ยนสองขั้นพร้อมกัน</td><td>อธิบาย limitation + เสนอ experiment แยกผล</td></tr>
+</tbody></table></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">15</span> Wrap-up <span class="chip w12">W12</span></h2>
+<ol class="steps">
+  <li><b>Supabase</b> = BaaS open-source บน PostgreSQL ที่มี Data API อัตโนมัติ, RLS, Auth, Storage, Realtime, Edge Functions, pgvector</li>
+  <li>เชื่อมต่อด้วย <b>publishable key + URL ใน secrets.toml</b> และ <code>GRANT ... TO anon</code> (ห้ามใช้ secret/service-role key)</li>
+  <li><b>Client → <code>cache_resource</code></b> ส่วน <b>ผล query → <code>cache_data(ttl=600)</code></b> และ Refresh ด้วย <code>.clear()</code> + <code>st.rerun()</code></li>
+  <li><b>Filter, sort, limit ที่ database</b> และระวังวันสุดท้ายด้วย <code>&lt; end_date + 1 day</code></li>
+  <li>ข้อมูลเยอะใช้ <b>pagination (<code>.range</code>)</b> และเขียนกลับด้วย <b><code>upsert(on_conflict=...)</code></b> เฉพาะตอนกดปุ่ม</li>
+  <li>preprocessing ไม่ได้ดีขึ้นเสมอ ต้องทดลองแบบ controlled และระวังการสรุปเหตุ</li>
+</ol>
+
+<!-- ===================================================== -->
+<h2><span class="num">✎</span> แบบฝึกหัดท้ายบท Week 12 <span class="chip w12">W12</span></h2>
+<p class="muted">ข้อกาตรวจทันทีพร้อมเหตุผล ส่วนข้อเขียนให้ลองตอบก่อนแล้วค่อยกด “ดูแนวคำตอบ” ระบบจะเช็กว่าคุณเขียนถึงคำสำคัญครบไหม</p>
+<div class="quiz-mount" data-week="w12"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปจากสไลด์และ Lab ของวิชา 06016474 Applied AI for IT · Week 12 (Lab 12)</footer>
+
+<script src="assets/q-w12.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, $$, renderCode, sortGame, esc } = AAIT;
+  // 80 sample rows from helpdesk_tickets_timestamped.csv: [ticket_id, created_at, category, text]
+  const SAMPLE = [["T0001", "2026-01-01T09:00:00", "Account & Access", "Issue: Encountered login difficulties following the update. Tried clearing cache and re..."], ["T0027", "2026-01-04T09:17:00", "Software", "Our digital campaign encountered an unexpected crash due to recent software updates. Af..."], ["T0053", "2026-01-07T09:52:00", "Network", "Facing occasional connectivity problems with the SaaS platform, which is resulting in d..."], ["T0079", "2026-01-11T09:02:00", "Network", "Facing connectivity problems with the SaaS project management system, which has affecte..."], ["T0105", "2026-01-14T09:49:00", "Account & Access", "We are facing a significant login challenge that is stopping users from accessing their..."], ["T0131", "2026-01-17T09:52:00", "Hardware & Peripherals", "Dear Support Team,I hope this message reaches you well. I am reaching out for help rega..."], ["T0157", "2026-01-21T09:17:00", "Account & Access", "Hello Support Team, I have been encountering occasional login difficulties recently. Th..."], ["T0183", "2026-01-24T09:53:00", "Network", "Currently, we are facing connectivity problems with the Google Nest Wifi Router, which..."], ["T0209", "2026-01-28T09:03:00", "Network", "The project management SaaS is encountering intermittent connectivity issues with vario..."], ["T0235", "2026-01-31T09:50:00", "Software", "Facing occasional connection problems with the SaaS application. This might be due to n..."], ["T0261", "2026-02-03T09:44:00", "Hardware & Peripherals", "The medical scanner data scanning stopped unexpectedly. Might be due to an outdated dri..."], ["T0287", "2026-02-07T09:13:00", "Software", "There is a serious issue with the project management app that is causing it to crash on..."], ["T0313", "2026-02-10T09:40:00", "Network", "I am contacting you to report a data breach that has been detected in our hospital netw..."], ["T0339", "2026-02-14T09:08:00", "Software", "Hello Customer Support, I am encountering software compatibility problems with several..."], ["T0365", "2026-02-17T09:39:00", "Network", "Dear Customer Support,I hope this message finds you well. We have recently detected an..."], ["T0391", "2026-02-20T09:42:00", "Software", "We are facing unexpected delays and inconsistencies in data reporting for our marketing..."], ["T0417", "2026-02-24T09:20:00", "Software", "Encountering inaccuracies in investment predictions generated by the data analytics sof..."], ["T0443", "2026-02-27T09:41:00", "Network", "Project information vanished unexpectedly because of a compatibility issue with the Goo..."], ["T0469", "2026-03-03T09:15:00", "Software", "There seems to be an integration issue with the project management SaaS, which might be..."], ["T0495", "2026-03-06T09:40:00", "Network", "Have encountered connectivity issues that have impacted productivity. Rebooting and upd..."], ["T0521", "2026-03-10T09:03:00", "Software", "The marketing team is facing software crashes while using Adobe Effects 2021 with OBS S..."], ["T0547", "2026-03-13T09:34:00", "Software", "Digital applications such as Slack, Magento, and Sony Vegas Pro 18 are experiencing fre..."], ["T0573", "2026-03-16T09:58:00", "Software", "Dear Customer Support, a financial organization is facing system performance slowdowns..."], ["T0599", "2026-03-20T09:29:00", "Software", "I am seeking detailed documentation and comprehensive guides for the data analytics too..."], ["T0625", "2026-03-23T09:46:00", "Software", "An incident took place on the scalable SaaS platform, potentially caused by server over..."], ["T0651", "2026-03-27T09:24:00", "Software", "A financial organization is facing integration problems across various products, leadin..."], ["T0677", "2026-03-30T09:41:00", "Software", "The social media analytics tool has malfunctioned, disrupting essential campaign analys..."], ["T0703", "2026-04-03T09:16:00", "Hardware & Peripherals", "Surface Pro 7 crashes and touchscreen issues"], ["T0729", "2026-04-06T09:37:00", "Hardware & Peripherals", "Dear Customer Support Team,I hope this message finds you well. I am writing to seek ass..."], ["T0755", "2026-04-09T09:35:00", "Network", "Hello, I am experiencing connectivity issues with my HP DeskJet 3755 printer. It is not..."], ["T0781", "2026-04-13T09:31:00", "Network", "A financial company encountered connectivity problems with their Netgear Nighthawk Mesh..."], ["T0807", "2026-04-16T09:34:00", "Network", "I am facing inconsistent connection problems with several integrated services. This iss..."], ["T0833", "2026-04-20T09:08:00", "Hardware & Peripherals", "Dear Tech Online Store Support,I am writing to report an ongoing screen flickering issu..."], ["T0859", "2026-04-23T09:29:00", "Hardware & Peripherals", "Hello Customer Support, I am writing to report an issue with the synchronization of pro..."], ["T0885", "2026-04-26T09:29:00", "Network", "Project synchronization has encountered problems possibly due to network connectivity i..."], ["T0911", "2026-04-30T09:13:00", "Software", "IntelliJ IDEA experienced a malfunction, disrupting the working process. It could be du..."], ["T0937", "2026-05-03T09:30:00", "Software", "Customer Support, preparing a report on a critical problem in the data analytics platfo..."], ["T0963", "2026-05-07T09:00:00", "Hardware & Peripherals", "Respected Customer Support Team, I have run into some unanticipated problems with my pr..."], ["T0989", "2026-05-10T09:21:00", "Hardware & Peripherals", "Dear Tech Online Store Customer Support,I am writing to seek assistance regarding a per..."], ["T1015", "2026-05-13T09:42:00", "Software", "Dear IT Services Support Team,I hope this message finds you well. I am reaching out to..."], ["T1041", "2026-05-17T09:13:00", "Software", "Dear Customer Support, I am contacting you to report an unanticipated crash of the proj..."], ["T1067", "2026-05-20T09:37:00", "Software", "Dear support team, an incident happened on our SaaS platform where the system crashed w..."], ["T1093", "2026-05-24T09:15:00", "Software", "Dear Support Team, we are facing challenges in integrating our digital marketing campai..."], ["T1119", "2026-05-27T09:28:00", "Network", "Customer Support, reporting an issue with digital marketing tools including Adobe Sign,..."], ["T1145", "2026-05-30T09:56:00", "Software", "Our financial firm is experiencing difficulties with its data analytics tools when inte..."], ["T1171", "2026-06-02T09:59:00", "Software", "Our marketing agency is encountering slow response times, which might be due to high tr..."], ["T1197", "2026-06-05T09:30:00", "Software", "The data analysis software is not functioning correctly. It may be due to a software co..."], ["T1223", "2026-06-08T09:37:00", "Hardware & Peripherals", "My keyboard is malfunctioning, which has resulted in data loss. After restarting my wor..."], ["T1249", "2026-06-10T14:45:00", "Hardware & Peripherals", "My mouse is not working."], ["T1275", "2026-06-13T09:39:00", "Software", "Seeking assistance to optimize investment analytics tools integration. Currently, the s..."], ["T1301", "2026-06-16T09:11:00", "Network", "Dear Customer Support Team,We are currently facing substantial technical problems impac..."], ["T1327", "2026-06-19T09:07:00", "Network", "The marketing agency's brand development is being impeded due to problems with the data..."], ["T1353", "2026-06-21T09:37:00", "Account & Access", "I am currently facing a login challenge that occurred without any prior warning. Despit..."], ["T1379", "2026-06-24T09:26:00", "Software", "I am writing to acknowledge the issue with the data analytics system, which has failed..."], ["T1405", "2026-06-27T09:20:00", "Network", "The marketing agency's digital strategies have faced challenges with the connectivity i..."], ["T1431", "2026-06-29T14:45:00", "Network", "The network printer is not visible on my computer."], ["T1457", "2026-07-02T09:49:00", "Software", "Hello Customer Support, I am contacting you to report a serious problem. Our data encry..."], ["T1483", "2026-07-05T09:15:00", "Account & Access", "My single sign-on account is not working."], ["T1509", "2026-07-08T09:15:00", "Software", "The database client shows an unexpected software error."], ["T1535", "2026-07-10T09:33:00", "Software", "Respected customer service team, we face a severe issue with our medical information se..."], ["T1561", "2026-07-14T09:01:00", "Account & Access", "The login function experienced an unexpected failure last night. This might be due to o..."], ["T1587", "2026-07-17T09:15:00", "Account & Access", "Last night, the login feature malfunctioned without warning. Potential reasons might be..."], ["T1613", "2026-07-20T09:59:00", "Network", "Respected Customer Support, I am encountering difficulties with several integrations th..."], ["T1639", "2026-07-24T09:09:00", "Software", "The system experienced a crash while running Keras models for investment predictions. R..."], ["T1665", "2026-07-27T09:51:00", "Network", "Customers have been facing sporadic connectivity problems during the SaaS platform's bu..."], ["T1691", "2026-07-31T09:04:00", "Account & Access", "I am having a login problem that occurred suddenly. Despite clearing my browser cache a..."], ["T1717", "2026-08-03T09:35:00", "Software", "The organization encountered failures in data integration across several products, prob..."], ["T1743", "2026-08-06T09:59:00", "Software", "An incident impacting several products resulted in system crashes and data synchronizat..."], ["T1769", "2026-08-10T09:30:00", "Software", "Dear Support Team, I am contacting you to address an issue we are experiencing with the..."], ["T1795", "2026-08-13T09:54:00", "Software", "Hello Customer Support, we are encountering an unexpected service disruption that is im..."], ["T1821", "2026-08-17T09:09:00", "Network", "Noted experiencing connectivity issues with the SaaS project management tool, which was..."], ["T1847", "2026-08-20T09:49:00", "Software", "Facing compatibility challenges with marketing tools and software applications. Recent..."], ["T1873", "2026-08-23T09:59:00", "Software", "Our digital campaigns have halted due to technical problems that might be related to ol..."], ["T1899", "2026-08-27T09:44:00", "Software", "The user has encountered irregular performance with the project management software dur..."], ["T1925", "2026-08-30T09:56:00", "Account & Access", "Users encounter sporadic login difficulties because of server overload."], ["T1951", "2026-09-03T09:11:00", "Hardware & Peripherals", "We are encountering syncing issues with the Smart-Licht Touchscreen-Monitor. Restarting..."], ["T1977", "2026-09-06T09:45:00", "Network", "Hello Customer Support, I am reaching out to report a network outage that has recently..."], ["T2003", "2026-09-10T09:00:00", "Hardware & Peripherals", "Our marketing agency encountered disruptions during the implementation of our digital s..."], ["T2029", "2026-09-13T09:21:00", "Hardware & Peripherals", "Digital campaign metrics aren't syncing with PostgreSQL. The problem could be related t..."], ["T2055", "2026-09-16T09:47:00", "Network", "Dear Customer Support,I am writing to report ongoing issues with device connectivity th..."]];
+
+  /* ---------- sort games ---------- */
+  sortGame($("#sortFeature"), {
+    options: ["Database", "Auth", "Storage", "Realtime", "Edge Fn", "pgvector"],
+    items: [
+      { text: "ให้ผู้ใช้ login ด้วยบัญชี Google หรือ GitHub", answer: 1, why: "Authentication รองรับ email/password และ OAuth" },
+      { text: "เก็บไฟล์ PDF และรูปภาพขนาดใหญ่ที่ผู้ใช้อัปโหลด", answer: 2, why: "Storage ใช้จัดเก็บไฟล์สื่อและเอกสาร" },
+      { text: "หน้า dashboard อัปเดตทันทีเมื่อมี ticket ใหม่เข้ามา", answer: 3, why: "Realtime sync ข้อมูลกับหน้าแอปผ่าน WebSockets" },
+      { text: "เก็บ embeddings ของ ticket เพื่อค้นหาความคล้ายสำหรับ RAG", answer: 5, why: "pgvector เก็บและค้นหาข้อมูล vector" },
+      { text: "รันโค้ดสั้น ๆ ฝั่ง server แบบ serverless ใกล้ผู้ใช้", answer: 4, why: "Edge Functions = serverless code กระจายใกล้ผู้ใช้ทั่วโลก" },
+      { text: "เก็บตาราง helpdesk_tickets และ query ด้วย SQL", answer: 0, why: "Database = PostgreSQL (relational, SQL)" },
+    ],
+  });
+  sortGame($("#sortKeys"), {
+    options: ["ปลอดภัย / ถูกต้อง", "ไม่ควรทำ"],
+    items: [
+      { text: "ใส่ <code>sb_publishable_...</code> เป็น <code>supabase_key</code> ใน secrets.toml", answer: 0, why: "Lab กำหนดให้ใช้ publishable key ซึ่งทำงานในนาม role anon" },
+      { text: "ใช้ <code>sb_secret_...</code> (service role) ในแอป Streamlit เพื่อจะได้ไม่ติดสิทธิ์", answer: 1, why: "secret/service-role key มีสิทธิ์สูงและข้าม RLS ได้ ห้ามใช้ใน Lab นี้" },
+      { text: "hard-code URL และ key ลงใน main.py โดยตรง", answer: 1, why: "ควรแยก configuration ไว้ใน <code>.streamlit/secrets.toml</code> แล้วอ่านผ่าน <code>st.secrets</code>" },
+      { text: "commit <code>.streamlit/secrets.toml</code> ขึ้น GitHub", answer: 1, why: "ห้ามเด็ดขาด ตอน deploy ให้ใส่ใน Advanced settings → Secrets แทน (W13)" },
+      { text: "<code>GRANT SELECT ON TABLE public.helpdesk_tickets TO anon;</code>", answer: 0, why: "ให้ role anon อ่าน (SELECT) ได้อย่างเดียว ตามที่แอปต้องการ" },
+      { text: "ปิด RLS บนระบบจริงที่มีข้อมูลลูกค้าหลายราย", answer: 1, why: "ปิดได้แค่ใน Lab ที่เป็นข้อมูลจำลอง ระบบจริงควรเปิด RLS + Policy" },
+    ],
+  });
+
+  /* ---------- query builder ---------- */
+  let dateMode = "ok";
+  const pyBox = $("#qbPy"), sqlBox = $("#qbSql");
+  const addDay = (d) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+  function qb() {
+    const cols = $$(".qbCol").filter((c) => c.checked).map((c) => c.value);
+    const sel = cols.length === 0 || cols.length === 4 ? "*" : cols.join(", ");
+    const showCols = sel === "*" ? ["ticket_id", "created_at", "category", "text"] : cols;
+    const start = $("#qbStart").value || "2026-01-01", end = $("#qbEnd").value || "2026-09-16";
+    const cat = $("#qbCat").value, order = $("#qbOrder").value;
+    const lim = parseInt($("#qbLimit").value, 10);
+    const endEx = addDay(end);
+    let py = `response = (\n    supabase\n    .table("helpdesk_tickets")\n    .select("${sel}", count="exact")\n    .gte("created_at", "${start}")\n`;
+    py += dateMode === "ok" ? `    .lt("created_at", "${endEx}")   ##! end_date + 1 วัน → รวมทุกเวลาของ ${end}\n` : `    .lte("created_at", "${end}")    ##! ตีความเป็น ${end} 00:00:00 → ticket ของวันนี้ที่เกิดหลังเที่ยงคืนหายหมด\n`;
+    if (cat !== "All") py += `    .eq("category", "${cat}")\n`;
+    if (order === "desc") py += `    .order("created_at", desc=True)\n`;
+    if (order === "asc") py += `    .order("created_at")\n`;
+    if (lim > 0) py += `    .limit(${lim})\n`;
+    py += `    .execute()\n)\ndf = pd.json_normalize(response.data)`;
+    let sql = `SELECT ${sel}\nFROM public.helpdesk_tickets\nWHERE created_at >= '${start}'\n  AND created_at ${dateMode === "ok" ? `< '${endEx}'` : `<= '${end}'`}`;
+    if (cat !== "All") sql += `\n  AND category = '${cat}'`;
+    if (order === "desc") sql += `\nORDER BY created_at DESC`;
+    if (order === "asc") sql += `\nORDER BY created_at ASC`;
+    if (lim > 0) sql += `\nLIMIT ${lim}`;
+    sql += ";";
+    pyBox.innerHTML = ""; pyBox.appendChild(renderCode(py, { title: "Python (supabase client)" }).el);
+    sqlBox.innerHTML = ""; sqlBox.appendChild(renderCode(sql, { title: "SQL ที่เทียบเท่า", lang: "sql" }).el);
+    const upper = dateMode === "ok" ? endEx + "T00:00:00" : end + "T00:00:00";
+    let rows = SAMPLE.filter((r) => r[1] >= start + "T00:00:00" && (dateMode === "ok" ? r[1] < upper : r[1] <= upper) && (cat === "All" || r[2] === cat));
+    const matching = rows.length;
+    const lostByBug = dateMode === "bug" ? SAMPLE.filter((r) => r[1].slice(0, 10) === end && (cat === "All" || r[2] === cat)).length : 0;
+    if (order === "desc") rows = rows.slice().sort((a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0));
+    if (order === "asc") rows = rows.slice().sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    if (lim > 0) rows = rows.slice(0, lim);
+    $("#qbCount").textContent = matching;
+    $("#qbRows").textContent = rows.length;
+    $("#qbNote").innerHTML = dateMode === "bug" && lostByBug ? `<span class="badge-bad">⚠ มี ${lostByBug} ticket ของวันที่ ${end} ที่ตกหล่นเพราะบั๊ก 00:00</span>` : (start > end ? `<span class="badge-bad">Start date อยู่หลัง End date — ในแอปจริงจะ st.error + st.stop()</span>` : (lim > 0 && matching > lim ? "limit ตัดให้เหลือแค่ " + lim + " แถว (database ส่งมาแค่นั้น)" : ""));
+    const idx = { ticket_id: 0, created_at: 1, category: 2, text: 3 };
+    $("#qbTable").innerHTML = `<thead><tr>${showCols.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>` +
+      (rows.length ? rows.map((r) => `<tr>${showCols.map((c) => `<td class="${c === "text" ? "tx" : ""}">${esc(r[idx[c]])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${showCols.length}" class="muted">No tickets matched the selected filters. (response.data = [])</td></tr>`) + "</tbody>";
+  }
+  ["#qbStart", "#qbEnd", "#qbCat", "#qbOrder", "#qbLimit"].forEach((s) => $(s).addEventListener("input", qb));
+  $$(".qbCol").forEach((c) => c.addEventListener("change", qb));
+  $("#qbDateMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    dateMode = b.dataset.m;
+    $$("#qbDateMode button").forEach((x) => x.classList.toggle("on", x === b));
+    qb();
+  });
+  qb();
+
+  /* ---------- cache demo ---------- */
+  let clock = 0, run = 0, client = null;
+  const cache = new Map();
+  const TTL = 600;
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const log = (h) => { const el = $("#cdLog"); el.insertAdjacentHTML("afterbegin", `<div>[${fmt(clock)}] ${h}</div>`); };
+  function paintCache() {
+    $("#cdClock").textContent = fmt(clock);
+    $("#cdClient").innerHTML = client ? `Client #1 (สร้างตอน run #${client}) <span class="badge-ok">reused</span>` : "ยังไม่ได้สร้าง";
+    const rows = [...cache.entries()].map(([k, v]) => {
+      const left = TTL - (clock - v.t);
+      return `${esc(k)} → ${v.n} rows · <span class="${left > 0 ? "badge-ok" : "badge-bad"}">${left > 0 ? "หมดอายุใน " + fmt(left) : "หมดอายุแล้ว"}</span>`;
+    });
+    $("#cdEntries").innerHTML = rows.length ? rows.join("<br>") : "(ว่าง)";
+  }
+  $("#cdRun").addEventListener("click", () => {
+    run++;
+    if (!client) { client = run; log(`run #${run}: init_connection() <span class="miss">MISS</span> → create_client() (Connecting to Supabase...)`); }
+    else log(`run #${run}: init_connection() <span class="hit">HIT</span> → reuse client เดิม`);
+    const k = `run_query(${$("#cdRange").value}, '${$("#cdCat").value}')`;
+    const e = cache.get(k);
+    if (e && clock - e.t < TTL) log(`run #${run}: ${esc(k)} <span class="hit">HIT</span> → ไม่ส่ง request ไป Supabase`);
+    else {
+      const n = 40 + Math.floor(Math.random() * 300);
+      cache.set(k, { t: clock, n });
+      log(`run #${run}: ${esc(k)} <span class="miss">MISS</span>${e ? " (TTL หมดอายุ)" : ""} → query Supabase แล้วเก็บผล`);
+    }
+    paintCache();
+  });
+  $("#cdTime").addEventListener("click", () => { clock += 300; log("⏩ เวลาผ่านไป 5 นาที"); paintCache(); });
+  $("#cdRefresh").addEventListener("click", () => {
+    cache.clear();
+    log(`กด Refresh → load_date_bounds.clear(), run_query.clear() → st.rerun()`);
+    log(`<span class="muted">client ไม่ถูก clear (ยังเป็น resource เดิม)</span>`);
+    paintCache();
+    $("#cdRun").click();
+  });
+  paintCache();
+
+  /* ---------- pagination ---------- */
+  let pgBusy = false;
+  $("#pgRun").addEventListener("click", async () => {
+    if (pgBusy) return; pgBusy = true;
+    const total = Math.max(0, +$("#pgTotal").value || 0), size = Math.max(1, +$("#pgSize").value || 1000);
+    const box = $("#pgRows"); box.innerHTML = "";
+    let start = 0, got = 0, req = 0;
+    $("#pgOut").textContent = "records = []";
+    while (req < 30) {
+      req++;
+      const n = Math.max(0, Math.min(size, total - start));
+      const row = document.createElement("div");
+      row.className = "page-row";
+      row.innerHTML = `<span class="mono">request #${req}</span><div><div class="mono small">.range(${start}, ${start + size - 1})</div><div class="pbar"><i></i></div></div><span class="mono">${n} rows</span>`;
+      box.appendChild(row);
+      await new Promise((r) => setTimeout(r, 60));
+      row.querySelector("i").style.width = (n / size) * 100 + "%";
+      await new Promise((r) => setTimeout(r, 550));
+      got += n;
+      $("#pgOut").textContent = `records มีแล้ว ${got} แถว`;
+      if (n < size) { row.insertAdjacentHTML("beforeend", `<span class="small" style="grid-column:1/-1;color:var(--ok)">len(batch) = ${n} &lt; page_size = ${size} → break (หน้าสุดท้าย)</span>`); break; }
+      start += size;
+    }
+    $("#pgOut").textContent = `return pd.json_normalize(records) → DataFrame ${got} แถว จาก ${req} requests`;
+    pgBusy = false;
+  });
+
+  /* ---------- boilerplate regex ---------- */
+  const EX = [
+    "Dear Customer Support,\nI am writing to report frequent disconnects with our Cisco Router ISR4331.   Restarting did not help.\nThank you for your attention.\nBest regards, name",
+    "To whom it may concern:  Our printer is not detected after the latest driver update. Please advise. Thank you for your help! Best regards, [Your Name]",
+    "Encountered login difficulties following the update. Tried clearing cache and restarting the service.",
+  ];
+  const STEPS = [
+    ["1. ลบ opening boilerplate", (t) => t.replace(/^\s*(?:dear customer support(?: team)?|hello customer support|dear support team|to whom it may concern)\s*[:,]?\s*/i, "")],
+    ["2. ลบ “Best regards, name”", (t) => t.replace(/\s*best regards\s*[:,]?\s*(?:\[?\s*(?:your )?name\s*\]?)?\s*$/i, "")],
+    ["3. ลบ “Thank you ...”", (t) => t.replace(/\s*thank you(?: for your [^.?!]*)?[.!]?\s*(?:name)?\s*$/i, "")],
+    ["4. Normalize whitespace (\\s+ → ' ', strip)", (t) => t.replace(/\s+/g, " ").trim()],
+  ];
+  function bp() {
+    let t = $("#bpIn").value;
+    let html = "";
+    STEPS.forEach(([label, fn]) => {
+      const nt = fn(t);
+      const changed = nt !== t;
+      html += `<div class="sort-item ${changed ? "right" : ""}" style="display:block"><div class="small"><b>${label}</b> ${changed ? "· เปลี่ยน" : "· ไม่มีอะไรตรง"}</div><div class="mono small" style="white-space:pre-wrap">${esc(JSON.stringify(nt))}</div></div>`;
+      t = nt;
+    });
+    html += `<div class="small muted">ความยาว ${$("#bpIn").value.length} → ${t.length} ตัวอักษร</div>`;
+    $("#bpSteps").innerHTML = html;
+  }
+  $("#bpIn").addEventListener("input", bp);
+  $$("[data-ex]").forEach((b) => b.addEventListener("click", () => { $("#bpIn").value = EX[+b.dataset.ex]; bp(); }));
+  $("#bpIn").value = EX[0]; bp();
+
+  /* ---------- upsert demo ---------- */
+  let table = [], version = 1;
+  const SRC = [["T0001", "Encountered login difficulties following the update."], ["T0002", "Data encryption stopped working unexpectedly."], ["T0003", "Frequent disconnects with our Cisco Router ISR4331."], ["T0004", "Printer is not detected after driver update."]];
+  const records = () => SRC.map(([id, t]) => ({ id, text: version === 1 ? t : t.replace(/\.$/, "") + " (v2)" }));
+  function paintUp(msg, bad) {
+    $("#upMsg").innerHTML = (bad ? `<span class="badge-bad">${msg}</span>` : msg) + `<br>จำนวนแถวในตาราง: <b>${table.length}</b>`;
+    $("#upTable").innerHTML = `<thead><tr><th>ticket_id</th><th>text</th></tr></thead><tbody>` + (table.length ? table.map((r) => `<tr><td>${r.id}</td><td class="tx">${esc(r.text)}</td></tr>`).join("") : `<tr><td colspan="2" class="muted">(ว่าง)</td></tr>`) + "</tbody>";
+  }
+  $("#upEdit").addEventListener("click", () => { version = version === 1 ? 2 : 1; paintUp(`processed_df ตอนนี้เป็นเวอร์ชัน v${version} (ยังไม่ได้ save)`); });
+  $("#upInsert").addEventListener("click", () => {
+    const pk = $("#upPk").checked, recs = records();
+    if (pk && recs.some((r) => table.some((x) => x.id === r.id))) return paintUp(`.insert() → ERROR: duplicate key value violates unique constraint (ticket_id ซ้ำ) — save ซ้ำด้วย insert ไม่ได้`, true);
+    table = table.concat(recs);
+    paintUp(pk ? ".insert() สำเร็จ: เพิ่ม 4 แถวใหม่" : ".insert() สำเร็จ แต่ไม่มี primary key → กดซ้ำจะได้แถวซ้ำเรื่อย ๆ", !pk && table.length > 4);
+  });
+  $("#upUpsert").addEventListener("click", () => {
+    if (!$("#upPk").checked) return paintUp(`.upsert(on_conflict="ticket_id") → ERROR: there is no unique or exclusion constraint matching the ON CONFLICT specification (ต้องมี PK/unique ที่ ticket_id ก่อน)`, true);
+    let ins = 0, upd = 0;
+    records().forEach((r) => { const i = table.findIndex((x) => x.id === r.id); if (i >= 0) { table[i] = r; upd++; } else { table.push(r); ins++; } });
+    paintUp(`.upsert() สำเร็จ: INSERT ${ins} แถว, UPDATE ${upd} แถว (ไม่มีแถวซ้ำ)`);
+  });
+  $("#upReset").addEventListener("click", () => { table = []; paintUp("ล้างตารางแล้ว"); });
+  $("#upPk").addEventListener("change", () => { table = []; paintUp($("#upPk").checked ? "ตารางมี PK ที่ ticket_id (ล้างข้อมูลแล้ว)" : "ตารางไม่มี PK (ล้างข้อมูลแล้ว)"); });
+  paintUp("helpdesk_tickets_processed ว่างอยู่");
+});
+</script>
+</body>
+</html>

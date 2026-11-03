@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAIT สรุปเตรียมสอบ</title>
+<meta name="description" content="สรุปเนื้อหา Applied AI for IT Week 9–13 แบบ interactive สำหรับเตรียมสอบ">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .story { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 20px 0; }
+  .story .node { position: relative; padding: 14px 12px; border: 1px solid var(--border); background: var(--surface); border-top: 5px solid var(--c); }
+  .story .node:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .story .node:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  .story .node + .node { border-left: 0; }
+  .story .node .wk { font-size: 12px; font-weight: 700; color: var(--c); letter-spacing: .05em; }
+  .story .node b { display: block; font-size: 15.5px; margin: 2px 0 4px; }
+  .story .node span.d { font-size: 13.5px; color: var(--text-2); line-height: 1.55; display: block; }
+  @media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } .story .node, .story .node:first-child, .story .node:last-child { border-radius: 0; border-left: 1px solid var(--border); } .story .node:first-child { border-radius: var(--radius) var(--radius) 0 0; } .story .node:last-child { border-radius: 0 0 var(--radius) var(--radius); } }
+</style>
+</head>
+<body data-page="home">
+<div class="layout no-toc">
+<main>
+
+<section class="hero">
+  <span class="eyebrow">06016474 · Applied AI for IT</span>
+  <h1>สรุปเตรียมสอบ Week 9 – 13<br><span class="muted" style="font-size:.6em;font-weight:500">Streamlit → Caching → Session State → Database → Deployment</span></h1>
+  <p class="lead">สรุปเนื้อหาครบทุกหัวข้อจากสไลด์และ Lab อธิบายแบบเข้าใจง่าย มีโค้ดที่คลิกดูคำอธิบายได้ทีละบรรทัด มีตัวจำลองให้ลองกด และมีคลังข้อสอบทั้งข้อกาและข้อเขียนแยกตามสัปดาห์</p>
+  <div class="meta">
+    <a class="btn primary" href="week09.html">เริ่มอ่าน Week 9 →</a>
+    <a class="btn" href="cheatsheet.html">สรุปย่อก่อนสอบ</a>
+    <a class="btn" href="exam.html">ทำข้อสอบจำลอง (15 + 15)</a>
+  </div>
+</section>
+
+<h2 class="no-track">เนื้อหาทั้งหมดคือ “เรื่องเดียวกัน”</h2>
+<p>ทั้ง 5 สัปดาห์ต่อกันเป็นเส้นเรื่องเดียว ถ้าจำเส้นเรื่องนี้ได้ จะรู้ทันทีว่าโจทย์ถามเรื่องอะไรและอยู่สัปดาห์ไหน</p>
+<div class="story">
+  <div class="node" style="--c:var(--w9)"><span class="wk">WEEK 9</span><b>Rerun model</b><span class="d">Python รันบน server ทุกครั้งที่กด widget สคริปต์ <b>รันใหม่ทั้งไฟล์</b></span></div>
+  <div class="node" style="--c:var(--w10)"><span class="wk">WEEK 10</span><b>Caching</b><span class="d">rerun ทำให้งานหนักถูกทำซ้ำ จึงใช้ <code>cache_data</code> / <code>cache_resource</code></span></div>
+  <div class="node" style="--c:var(--w11)"><span class="wk">WEEK 11</span><b>Session State</b><span class="d">rerun ทำให้ตัวแปรหาย จึงใช้ <code>st.session_state</code> เก็บ memory ต่อ session</span></div>
+  <div class="node" style="--c:var(--w12)"><span class="wk">WEEK 12</span><b>Database</b><span class="d">ย้ายข้อมูลจาก CSV ไปที่ Supabase (PostgreSQL) และ query เฉพาะแถวที่ต้องการ</span></div>
+  <div class="node" style="--c:var(--w13)"><span class="wk">WEEK 13</span><b>Deployment</b><span class="d">ขึ้น GitHub แล้ว deploy บน Streamlit Community Cloud เพื่อได้ Public URL</span></div>
+</div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>ปัญหา / คำถาม</th><th>คำตอบ / เครื่องมือ</th><th>สัปดาห์</th></tr></thead>
+<tbody>
+<tr><td>โค้ด Python รันที่ไหน? path ของไฟล์หมายถึงเครื่องใคร?</td><td>บน <b>server</b>; path คือ file system ของ server</td><td><span class="chip w9">Week 9</span></td></tr>
+<tr><td>ทำไมกดปุ่มแล้วโค้ดทั้งไฟล์ทำงานใหม่?</td><td><b>Rerun model</b> (top to bottom)</td><td><span class="chip w9">Week 9</span></td></tr>
+<tr><td>โหลด model/ไฟล์ใหญ่ซ้ำทุก rerun จนช้า</td><td><code>@st.cache_resource</code> / <code>@st.cache_data</code></td><td><span class="chip w10">Week 10</span></td></tr>
+<tr><td>ข้อมูลใน cache เก่า (stale) หรือ cache โตไม่หยุด</td><td><code>ttl</code>, <code>max_entries</code>, <code>.clear()</code>, ใส่ mtime เป็น argument</td><td><span class="chip w10">Week 10</span></td></tr>
+<tr><td>counter / chat history หายทุกครั้งที่กด</td><td><code>st.session_state</code> + init pattern</td><td><span class="chip w11">Week 11</span></td></tr>
+<tr><td>อยากให้ widget หนึ่งไปแก้อีก widget</td><td>widget <code>key</code> + callback (<code>on_change</code>, <code>on_click</code>)</td><td><span class="chip w11">Week 11</span></td></tr>
+<tr><td>อยากเก็บ/ดึงข้อมูลถาวรจากฐานข้อมูลภายนอก</td><td>Supabase client + query chain (<code>select/eq/gte/lt/order/limit</code>)</td><td><span class="chip w12">Week 12</span></td></tr>
+<tr><td>เก็บ URL/Key ไว้ที่ไหนให้ปลอดภัย?</td><td><code>.streamlit/secrets.toml</code> → <code>st.secrets</code> (ห้าม commit)</td><td><span class="chip w12">Week 12</span> <span class="chip w13">Week 13</span></td></tr>
+<tr><td>อยากให้คนอื่นเปิดแอปผ่าน URL ได้</td><td>GitHub → Streamlit Community Cloud (requirements.txt + Secrets)</td><td><span class="chip w13">Week 13</span></td></tr>
+</tbody></table></div>
+
+<h2 class="no-track">เลือกสัปดาห์ที่จะอ่าน</h2>
+<div class="grid c3">
+  <a class="week-card" href="week09.html" style="--c:var(--w9)" data-progress="w9"><div class="wnum">Week 9 · Lab 09</div><h3>Streamlit Fundamentals</h3><p>Client–server, WebSocket, sessions, rerun model, text/data/charts/widgets/forms/layout</p><div class="bar"><i></i></div><div class="pct"></div></a>
+  <a class="week-card" href="week10.html" style="--c:var(--w10)" data-progress="w10"><div class="wnum">Week 10 · Lab 10</div><h3>Caching &amp; Model Integration</h3><p>Hit/miss, cache identity, cache_data vs cache_resource, ttl, max_entries, clear, local models</p><div class="bar"><i></i></div><div class="pct"></div></a>
+  <a class="week-card" href="week11.html" style="--c:var(--w11)" data-progress="w11"><div class="wnum">Week 11 · Lab 11</div><h3>Session State &amp; Callbacks</h3><p>Init pattern, widget keys, on_click / on_change, common errors, stateful helpdesk lab</p><div class="bar"><i></i></div><div class="pct"></div></a>
+  <a class="week-card" href="lab12.html" style="--c:var(--w12)" data-progress="w12"><div class="wnum">Week 12 · Lab 12</div><h3>Database (Supabase)</h3><p>BaaS, PostgreSQL, RLS, keys, secrets.toml, GRANT, query chain, pagination, upsert</p><div class="bar"><i></i></div><div class="pct"></div></a>
+  <a class="week-card" href="lab13.html" style="--c:var(--w13)" data-progress="w13"><div class="wnum">Week 13 · Lab 13</div><h3>Deployment</h3><p>requirements.txt, GitHub, Streamlit Community Cloud, Secrets, Public URL</p><div class="bar"><i></i></div><div class="pct"></div></a>
+  <a class="week-card" href="exam.html" style="--c:var(--exam)"><div class="wnum">ทุกสัปดาห์</div><h3>ข้อสอบจำลอง</h3><p>สุ่มข้อกา 15 + ข้อเขียน 15 ข้อจากคลังทุกสัปดาห์ พร้อมเฉลย สรุปคะแนนรายสัปดาห์ และจับเวลาได้</p></a>
+</div>
+
+<h2 class="no-track">วิธีใช้เว็บนี้ให้ได้ผล</h2>
+<ol class="steps">
+  <li><b>อ่านทีละสัปดาห์ตามลำดับ</b> (9 → 13) เพราะแต่ละสัปดาห์ต่อยอดจากสัปดาห์ก่อน กด “อ่านหัวข้อนี้จบ” เพื่อเก็บความคืบหน้าไว้</li>
+  <li><b>โค้ดที่มีจุด ●</b> ให้คลิกบรรทัดนั้นเพื่อดูคำอธิบาย หรือกด “อธิบายทุกบรรทัด” ข้อสอบมักถามว่า “ส่วนนี้ทำงานอะไร” จึงควรอ่านส่วนนี้ให้ละเอียด</li>
+  <li><b>กล่อง “ลองเล่น”</b> คือตัวจำลองพฤติกรรมของ Streamlit ช่วยให้เห็นภาพ rerun, cache hit/miss และ session ที่แยกกัน</li>
+  <li><b>ทำแบบฝึกหัดท้ายบท</b> ข้อกาจะเฉลยทันที ส่วนข้อเขียนให้ลองเขียนเองก่อน แล้วกดดูแนวคำตอบกับคำสำคัญที่ควรมี</li>
+  <li><b>ก่อนสอบ</b> อ่าน <a href="cheatsheet.html">สรุปย่อ</a> แล้วทำ <a href="exam.html">ข้อสอบจำลอง</a> ดูว่าสัปดาห์ไหนยังอ่อนอยู่</li>
+</ol>
+
+<div class="grid c3">
+  <div class="callout key" style="margin:0"><div class="callout-title">💡 กล่องสาระสำคัญ</div>แก่นของหัวข้อนั้น ๆ</div>
+  <div class="callout exam" style="margin:0"><div class="callout-title">★ จุดออกสอบ</div>เรื่องที่สไลด์เน้นและมีโอกาสออกสอบสูง</div>
+  <div class="callout warn" style="margin:0"><div class="callout-title">⚠ ข้อผิดพลาด</div>bug หรือความเข้าใจผิดที่พบบ่อย</div>
+</div>
+
+<h2 class="no-track">เทคนิคตอบข้อเขียน</h2>
+<div class="grid c2">
+  <div class="card"><h4>คำถามทฤษฎี “X คืออะไร / ต่างกันอย่างไร”</h4>
+    <ol><li><b>นิยาม</b> 1 ประโยค</li><li><b>ทำไมต้องมี</b> (เชื่อมกับ rerun model)</li><li><b>ตัวอย่าง</b> หรือโค้ดสั้น ๆ</li><li>ถ้าเป็นการเปรียบเทียบ ให้แยกตาม <b>scope / purpose / lifetime</b></li></ol></div>
+  <div class="card"><h4>คำถามโค้ด “โค้ดนี้ทำงานอย่างไร / ได้ผลอะไร”</h4>
+    <ol><li>ไล่ตามลำดับ <b>จากบนลงล่าง</b> เหมือน Streamlit</li><li>ถามตัวเองว่า <b>rerun แล้วบรรทัดไหนรันซ้ำ</b> และค่าไหนรอด (cache / session_state)</li><li>ดู decorator, <code>key=</code>, <code>on_click=</code> และ <code>if</code> ให้ดี</li><li>เขียนผลลัพธ์พร้อม<b>เหตุผล</b></li></ol></div>
+</div>
+
+<p class="muted small" style="margin-top:30px">หมายเหตุ: Lab 12 และ Lab 13 ไม่ได้ระบุเลขสัปดาห์ในสไลด์ เว็บนี้จัดให้เป็น Week 12 และ Week 13 ตามลำดับ Lab ส่วนที่ติดป้าย <span class="chip extra">ส่วนเสริม (Lab)</span> คือรายละเอียดจากโค้ด Lab (เช่น ส่วน ML) ที่ลึกกว่าสไลด์ ข้อมูลความคืบหน้าและคำตอบจะเก็บไว้ใน browser นี้เท่านั้น</p>
+
+</main>
+</div>
+<footer class="site">สรุปจากสไลด์และ Lab ของวิชา 06016474 Applied AI for IT · Week 9 – 13</footer>
+<script src="assets/app.js"></script>
+</body>
+</html>

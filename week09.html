@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 9 · Streamlit Fundamentals</title>
+<meta name="description" content="สรุป Week 9: สถาปัตยกรรม Streamlit, Rerun model และ Building blocks">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body class="w9" data-page="w9">
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+
+<section class="hero">
+  <span class="eyebrow">● Week 9 · Lab 09</span>
+  <h1>Streamlit Fundamentals<br><span class="muted" style="font-size:.6em;font-weight:500">Streamlit Architecture and Interaction Model</span></h1>
+  <p class="lead">ทำความเข้าใจ “Streamlit ทำงานอย่างไร” ก่อนลงมือสร้าง: Python รันบน server, browser เป็นแค่ client และทุกครั้งที่ผู้ใช้กด widget สคริปต์จะ <b>รันใหม่ทั้งไฟล์ (rerun)</b> ความเข้าใจนี้เป็นฐานของ Week 10 และ Week 11</p>
+  <div class="meta"><span class="chip w9">Week 9</span><span class="chip">Architecture → Execution → Construction</span><span class="chip exam">★ = ออกสอบบ่อย</span></div>
+</section>
+
+<div class="callout key">
+  <div class="callout-title">🧭 เส้นทางการเรียนสัปดาห์นี้</div>
+  <ol style="margin:0">
+    <li><b>Architecture</b>: Python script server ↔ browser client</li>
+    <li><b>Execution</b>: การโต้ตอบกับ widget ทำให้สคริปต์ <b>rerun จากบนลงล่าง</b></li>
+    <li><b>Construction</b>: ใช้ building blocks สร้างแอป เช่น text, data, charts, widgets, forms และ layout</li>
+  </ol>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">1</span> Streamlit คืออะไร และทำไมต้องใช้ <span class="chip w9">W9</span></h2>
+
+<p><b>Streamlit</b> คือ Python library ที่เปลี่ยน <b>Python script ธรรมดาให้เป็น Web application แบบ interactive</b> ได้เลย <b>โดยไม่ต้องสร้าง frontend แยกด้วย HTML, CSS หรือ JavaScript ก่อน</b></p>
+
+<div class="flow">
+  <div class="step"><b>เริ่มจาก</b>Python script</div><div class="arrow">→</div>
+  <div class="step"><b>กลายเป็น</b>Web app</div><div class="arrow">→</div>
+  <div class="step"><b>ต่อยอดเป็น</b>Interactive dashboard</div><div class="arrow">→</div>
+  <div class="step"><b>สุดท้าย</b>AI-ready UI</div>
+</div>
+
+<h3>ทำไมต้องใช้: Streamlit ให้ “Application layer” กับงาน Python</h3>
+<p>แนวคิดคือนำงาน Python ที่มีอยู่แล้ว มาทำเป็นหน้าเว็บที่<b>คนอื่นใช้งานได้</b> ทั้งการใส่ input และการดูผลลัพธ์</p>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Data pipelines</span>แสดงข้อมูลที่ทำความสะอาดแล้ว พร้อม filter, chart และผลลัพธ์</div>
+  <div class="card"><span class="label">B · AI / ML tools</span>รับ prompt หรือ feature จากผู้ใช้ แล้วค่อยเชื่อมกับ model และ API ในภายหลัง</div>
+  <div class="card"><span class="label">C · Analysis code</span>รวมวิธีวิเคราะห์และผลลัพธ์เป็น prototype ที่แชร์ให้คนอื่นใช้ได้</div>
+</div>
+<div class="callout exam"><div class="callout-title">★ จุดออกสอบ</div>
+ถ้าถามว่า “Streamlit คืออะไร” ให้ตอบว่า เป็น Python framework/library ที่สร้าง interactive web app จาก Python script ได้โดยตรง โดย<b>ไม่ต้องเขียน frontend (HTML/CSS/JS) แยก</b> เหมาะใช้ทำ UI ให้งาน data, ML/AI และ analysis เพื่อให้คนอื่นใส่ input และเห็นผลลัพธ์ได้</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">2</span> จาก Script สู่ Web App: <code>python</code> vs <code>streamlit run</code> <span class="chip w9">W9</span></h2>
+
+<div class="compare">
+  <div class="b">
+    <span class="label">คำสั่ง Python ปกติ</span>
+    <p><code>python main.py</code></p>
+    <p>เป็น <b>Python process ธรรมดา</b> ที่รันจบแล้วปิดตัว output แสดงใน terminal และ input ก็รับจาก terminal</p>
+  </div>
+  <div class="a">
+    <span class="label">คำสั่ง Streamlit</span>
+    <p><code>streamlit run main.py</code></p>
+    <p>ใช้ Python ecosystem เดิม แต่<b>เปลี่ยน application model</b>: Streamlit สร้าง <b>web application ที่ทำงานต่อเนื่อง (long-lived server)</b> คอยรอผู้ใช้โต้ตอบ</p>
+  </div>
+</div>
+
+<h3>เกิดอะไรขึ้นบ้างหลังพิมพ์ <code>streamlit run main.py</code> ★</h3>
+<ol class="steps">
+  <li><b>Terminal command</b>: เราสั่ง <code>streamlit run main.py</code></li>
+  <li><b>Server starts</b>: Streamlit เปิด <b>server process</b> ขึ้นมา</li>
+  <li><b>main.py runs on server</b>: server รัน <code>main.py</code> แปลคำสั่ง <code>st.*</code> แต่ละคำสั่งให้เป็น interface element แล้วเปิดให้ browser เข้าถึง</li>
+  <li><b>Browser renders UI</b>: browser เปิดหน้าเว็บและแสดง title, widget, ตาราง, chart ฯลฯ ตามที่สคริปต์อธิบายไว้</li>
+</ol>
+<div class="callout key"><div class="callout-title">💡 สาระสำคัญ</div>
+Browser ได้รับแค่ <b>User interface</b> ส่วน <b>Python ยังอยู่ฝั่ง server เสมอ</b> และ server นี้เป็นแบบ <b>long-lived</b> คือรอรับการโต้ตอบ และพร้อม<b>รันสคริปต์ซ้ำ</b>ได้ทุกเมื่อ</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">3</span> สถาปัตยกรรม Client–Server <span class="chip w9">W9</span><span class="chip exam">★</span></h2>
+
+<p>หลักใหญ่: <b>Python runs on the server — not in the browser</b></p>
+
+<div class="diagram">
+<svg viewBox="0 0 760 250" width="760" role="img" aria-label="Browser client เชื่อมกับ Streamlit server ผ่าน WebSocket">
+  <rect class="box" x="10" y="30" width="230" height="190" rx="12"/>
+  <text x="125" y="62" text-anchor="middle" font-weight="700" font-size="17">Browser / Client</text>
+  <text x="125" y="92" text-anchor="middle" font-size="14">แสดง widgets + output</text>
+  <text x="125" y="116" text-anchor="middle" font-size="14">รับ action จากผู้ใช้</text>
+  <text x="125" y="140" text-anchor="middle" font-size="14">(คลิก, พิมพ์, เลื่อน slider)</text>
+  <text x="125" y="164" text-anchor="middle" font-size="14">แสดงผลที่อัปเดต</text>
+  <text x="125" y="200" text-anchor="middle" font-size="12.5" class="muted-t">ไม่มี Python รันที่นี่</text>
+
+  <rect class="box-wk" x="520" y="30" width="230" height="190" rx="12"/>
+  <text x="635" y="62" text-anchor="middle" font-weight="700" font-size="17">Streamlit Server</text>
+  <text x="635" y="88" text-anchor="middle" font-size="14">Python backend</text>
+  <text x="635" y="114" text-anchor="middle" font-size="14">โหลดข้อมูล · เรียกฟังก์ชัน</text>
+  <text x="635" y="138" text-anchor="middle" font-size="14">คำนวณ · รัน model</text>
+  <text x="635" y="162" text-anchor="middle" font-size="14">อ่าน storage ของ server</text>
+  <text x="635" y="186" text-anchor="middle" font-size="14">เรียก external API</text>
+
+  <path class="line-wk" d="M245 105 H515" stroke-width="2.5" marker-end="url(#ah)"/>
+  <path class="line" d="M515 150 H245" stroke-width="2.5" marker-end="url(#ah2)"/>
+  <text x="380" y="92" text-anchor="middle" font-size="13.5">ค่า widget ที่เปลี่ยน / ค่าที่ submit</text>
+  <text x="380" y="172" text-anchor="middle" font-size="13.5">element ใหม่ + ผลลัพธ์</text>
+  <text x="380" y="215" text-anchor="middle" font-size="13" font-weight="700" class="muted-t">WebSocket (persistent two-way)</text>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" class="fill-wk"/></marker>
+    <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" class="fill-muted"/></marker>
+  </defs>
+</svg>
+</div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>ฝั่ง</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><b>Browser / Client</b></td><td>แสดง widget และ output, รับ action จากผู้ใช้, แสดงผลที่อัปเดต</td></tr>
+<tr><td><b>Streamlit Server</b> (Python backend)</td><td>โหลดข้อมูล, เรียกฟังก์ชัน, คำนวณ, เรียก model, เข้าถึง storage ของ server และมักเป็นฝั่งที่เรียก external API</td></tr>
+<tr><td><b>การเชื่อมต่อ</b></td><td>สื่อสารสองทางแบบต่อเนื่อง (persistent two-way communication) ผ่าน <b>WebSocket</b></td></tr>
+</tbody></table></div>
+
+<h3>ทำไมเรื่องนี้สำคัญ? กระทบ 4 ด้าน ★</h3>
+<div class="grid c2">
+  <div class="card"><span class="label">🔒 Security</span><b>Secret API key</b> ต้องไม่ถูกส่งไปเป็นโค้ดฝั่ง browser ให้เก็บและใช้งานบน server เท่านั้น (Lab 12–13 ใช้ <code>st.secrets</code>)</div>
+  <div class="card"><span class="label">⚡ Performance</span>Model ขนาดใหญ่ใช้ <b>memory และ compute ของเครื่องที่รัน server</b> ไม่ใช่เครื่องของผู้ใช้</div>
+  <div class="card"><span class="label">📁 Files</span><b>File path ใน Python หมายถึง file system ของ server</b> ไม่ใช่เครื่องของผู้ใช้</div>
+  <div class="card"><span class="label">🐞 Debugging</span>error ของ Python จะเกิดขึ้นที่ server (ดูใน terminal ที่รัน) ส่วน browser แค่แสดงผล</div>
+</div>
+
+<h3>Local vs Deployed</h3>
+<div class="compare">
+  <div class="a"><span class="label">Local development</span><p><b>เครื่องเดียว แต่ยังมี 2 บทบาท</b> คือ Streamlit server และ browser client อยู่บนเครื่องเดียวกัน</p><p class="small muted">จึง “ซ่อน” เส้นแบ่ง client–server ไว้ ทำให้เราลืมได้ง่ายว่า path หรือ memory เป็นของ server</p></div>
+  <div class="b"><span class="label">Deployment</span><p><b>คนละเครื่อง เชื่อมกันผ่าน network</b> โดย Cloud/host เป็น server (มี Python, data, model) และเครื่องผู้ใช้เป็น browser</p><p class="small muted">path อย่าง <code>C:/Users/...</code> จะไม่มีอยู่บน cloud server</p></div>
+</div>
+
+<h3>Server ownership: path และการคำนวณเป็นของ server</h3>
+<script type="text/plain" class="code" data-title="main.py — โค้ดเหล่านี้รันที่ไหน?">
+df = pd.read_csv("data/sample.csv")        ##! รันบน **Streamlit server** หลัง deploy path นี้ชี้ไปที่ file system ของ server จึงต้อง upload โฟลเดอร์ `data/` ขึ้นไปพร้อมโค้ดด้วย (Lab 13)
+result = model.predict(text)               ##! การ predict ใช้ CPU/RAM ของ **server** ไม่ใช่เครื่องผู้ใช้
+open("C:/Users/student/report.pdf")        ##! ผิดหลัก! path นี้อยู่บนเครื่องนักศึกษา เมื่อ deploy แล้ว server **ไม่มีไฟล์นี้** ถ้าจะใช้ไฟล์ของผู้ใช้ แอปต้องรับไฟล์มาอย่างชัดเจน เช่นผ่าน `st.file_uploader`
+</script>
+<div class="callout tip"><div class="callout-title">🛠 Pattern จาก Lab 09: ผูก path กับโฟลเดอร์ของ main.py</div>
+<p>สไลด์บอกว่า <i>“Anchor the data/ path to the folder that contains main.py”</i> โดยใช้โค้ดนี้</p>
+<script type="text/plain" class="code" data-title="Lab 09 · section_2_data_display()">
+APP_DIR = Path(__file__).resolve().parent     ##! `__file__` คือ path ของ main.py, `.resolve()` ทำให้เป็น absolute path, `.parent` คือโฟลเดอร์ที่มี main.py อยู่
+DATA_DIR = APP_DIR / "data"                   ##! ใช้ `/` ต่อ path ได้เพราะเป็น `pathlib.Path`
+SAMPLE_DATA_PATH = DATA_DIR / "sample.csv"
+df = pd.read_csv(SAMPLE_DATA_PATH, dtype="int")   ##! อ่าน CSV เป็น DataFrame, `dtype="int"` บังคับให้ทุกคอลัมน์เป็นจำนวนเต็ม
+</script>
+<p style="margin:0">วิธีนี้น่าเชื่อถือกว่าการเขียน <code>"data/sample.csv"</code> เฉย ๆ เพราะ<b>ไม่ขึ้นกับ working directory ของ terminal</b> ไม่ว่าจะรันจากโฟลเดอร์ไหน (หรือรันบน cloud) ก็หาไฟล์เจอเสมอ</p></div>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> แยกให้ถูก: อันไหนเกิดที่ Server หรือ Browser?</div>
+  <div class="sim-body"><div id="sortServer"></div></div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">4</span> Communication &amp; Sessions: 1 แท็บ = 1 session <span class="chip w9">W9</span></h2>
+
+<p>browser กับ server คุยกันผ่าน <b>WebSocket ที่เปิดค้างไว้ (persistent)</b> ซึ่งใช้ส่งทั้งการโต้ตอบและ output ที่อัปเดต</p>
+<div class="grid c3">
+  <div class="card"><span class="label">A · Browser → Server</span>ค่า widget ที่เปลี่ยน และค่าที่ submit จะถูกส่งไปให้ Python</div>
+  <div class="card"><span class="label">B · Server → Browser</span>element ใหม่และผลลัพธ์จะถูกส่งกลับมาอัปเดตหน้าเว็บ</div>
+  <div class="card"><span class="label">C · แท็บใหม่ = session ใหม่</span>แต่ละแท็บหรือหน้าต่างมี connection และ session context ของตัวเอง</div>
+</div>
+<div class="callout key"><div class="callout-title">💡 สาระสำคัญ</div>
+<ul style="margin:0">
+<li>เปิด browser 1 แท็บ = สร้าง <b>1 session context</b></li>
+<li>ถ้าเปิดแอปเดิมในแท็บที่สอง จะมี <b>2 connections และ 2 sessions</b></li>
+<li><b>Server application ใช้ร่วมกัน</b> แต่แต่ละแท็บมี <b>ค่า widget และประวัติการโต้ตอบแยกกัน</b> (เรื่องนี้จะต่อยอดเป็น Session State ใน Week 11)</li>
+</ul></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">5</span> The Rerun Model: หัวใจของ Streamlit <span class="chip w9">W9</span><span class="chip exam">★★★</span></h2>
+
+<p>นี่คือแนวคิดที่สำคัญที่สุดของทั้งวิชา ถ้าเข้าใจเรื่องนี้ Week 10 และ 11 จะง่ายมาก</p>
+<div class="flow">
+  <div class="step"><b>1</b>ผู้ใช้เปลี่ยนค่า widget</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Browser ส่งค่าใหม่ไปที่ server</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Script <u>rerun จากบนลงล่าง</u></div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Browser แสดง output ใหม่</div>
+</div>
+<ul>
+  <li>Streamlit script ปกติจะ<b>ทำงานจากบรรทัดแรกถึงบรรทัดสุดท้าย (top to bottom)</b></li>
+  <li>สำหรับ <b>widget ที่อยู่นอก form</b> การเปลี่ยนค่ามักจะทำให้ <b>script rerun ใหม่ทั้งไฟล์</b></li>
+  <li>การ<b>แก้ source code</b> แล้ว save ก็ทำให้ rerun ได้เช่นกัน (สไลด์ Week 10 ทบทวนไว้)</li>
+  <li>ค่าที่ widget คืนมา (return value) จะเป็น<b>ค่าใหม่</b>ในรอบ rerun นั้น</li>
+</ul>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> ดู rerun ทีละบรรทัด: ทำไม <code>history</code> ถึงจำค่าไม่ได้?</div>
+  <div class="sim-body">
+    <p class="howto">พิมพ์ข้อความแล้วกด <b>Add</b> หลายครั้ง จะเห็นแถบสีเขียววิ่งจากบนลงล่าง (= rerun) ลองเทียบโหมด “ตัวแปรธรรมดา” กับ “Session State” (สิ่งที่จะได้เรียนใน Week 11)</p>
+    <div class="row" style="margin-bottom:12px">
+      <div class="seg" id="rrMode"><button type="button" class="on" data-m="plain">ตัวแปรธรรมดา (ปัญหา)</button><button type="button" data-m="state">st.session_state (ทางแก้ W11)</button></div>
+      <label class="small"><input type="checkbox" id="rrFast"> ข้ามแอนิเมชัน</label>
+    </div>
+    <div class="grid c2">
+      <div id="rrCode"></div>
+      <div>
+        <div class="fake-app">
+          <div class="bar"><i></i><i></i><i></i><span>localhost:8501</span></div>
+          <div class="content">
+            <div class="small muted">Enter a message:</div>
+            <div class="row"><input type="text" id="rrInput" value="hello" style="flex:1"><button class="btn primary" id="rrAdd" type="button">Add</button></div>
+            <div class="out" id="rrOut" style="margin-top:10px">History: []</div>
+          </div>
+        </div>
+        <div class="grid c2" style="margin-top:10px">
+          <div class="panel"><span class="label">ตัวแปรใน run นี้</span><div class="mono" id="rrVars">-</div></div>
+          <div class="panel"><span class="label">st.session_state</span><div class="mono" id="rrState">{}</div></div>
+        </div>
+        <div class="small muted" style="margin-top:8px" id="rrRun">Run #0</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>ผลที่ตามมาข้อ 1: Rerun ทำให้งานหนักถูกทำซ้ำ (→ Week 10 Caching)</h3>
+<script type="text/plain" class="code" data-title="main.py">
+model = load_model()               ##! ถ้า load model ใช้เวลา 8 วินาที **ทุก rerun** ผู้ใช้ต้องรอ 8 วินาทีใหม่ ทั้งที่ model ไม่ได้เปลี่ยนเลย
+text = st.text_input("Input")      ##! พิมพ์ข้อความใหม่ → rerun → บรรทัดบนถูกเรียกอีกครั้ง
+result = model.predict(text)
+</script>
+<p>ทุก rerun จะต้อง <b>อ่านไฟล์ใหญ่ / query database / เรียก API / สร้าง embeddings</b> ซ้ำ ผลคือ<b>ผู้ใช้รอนานขึ้นและเปลือง resource มากขึ้น</b> Week 10 จึงสอน <b>caching</b> เพื่อเลี่ยงการคำนวณซ้ำที่ไม่จำเป็น</p>
+
+<h3>ผลที่ตามมาข้อ 2: ตัวแปรธรรมดาจำค่าไม่ได้ (→ Week 11 Session State)</h3>
+<script type="text/plain" class="code" data-title="main.py — ตัวอย่างจากสไลด์">
+import streamlit as st
+history = []                                          ##! บรรทัดนี้ถูกรัน **ทุก rerun** ทำให้ `history` กลับเป็น list ว่างทุกครั้ง
+with st.form("message_form", clear_on_submit=True):   ##! `clear_on_submit=True` ทำให้ช่องกรอกถูกล้างหลังกด submit
+    message = st.text_input("Enter a message:")
+    submitted = st.form_submit_button("Add")          ##! คืนค่า `True` เฉพาะในรอบที่กดปุ่ม
+if submitted:
+    history.append(message)                           ##! เพิ่มข้อความลง list ได้จริง แต่ list นี้จะหายไปพร้อม run นี้
+st.write("History:", history)                         ##! จึงเห็นแค่ข้อความล่าสุดอันเดียวเสมอ
+</script>
+<p>Run 1: <code>history = []</code> → ผู้ใช้กด Add → <b>script rerun</b> → Run 2: <code>history = []</code> อีกครั้ง Week 11 จึงสอน <b>Session State</b> เพื่อเก็บข้อมูลเฉพาะของ session ไว้ใช้ในการโต้ตอบครั้งถัดไป</p>
+
+<h3>สะพานเชื่อม Week 9 → 11 ★</h3>
+<div class="compare">
+  <div class="a"><span class="label">ปัญหา 1 · งานหนักถูกทำซ้ำ</span><p>งาน data, model หรือ API ถูกรันใหม่ เช่น ไฟล์ใหญ่ · database query · การตั้งค่า inference · embeddings</p><p><b>ทางแก้: Caching (Week 10)</b></p></div>
+  <div class="a"><span class="label">ปัญหา 2 · ข้อมูลต้องอยู่รอด</span><p>ตัวแปรธรรมดาถูกสร้างใหม่ทุก rerun เช่น chat history · progress · ผลลัพธ์ก่อนหน้า · context ของ workflow</p><p><b>ทางแก้: Session State (Week 11)</b></p></div>
+</div>
+<div class="callout exam"><div class="callout-title">★ ประโยคที่ควรจำ</div>
+Caching และ Session State <b>เป็นผลที่ตามมาจาก execution model (rerun)</b> ไม่ใช่ฟีเจอร์ที่ไม่เกี่ยวกันสองตัว</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">6</span> Lab 09 Building Blocks: ภาพรวม <span class="chip w9">W9</span></h2>
+<div class="grid c4 keep2">
+  <div class="card"><span class="label">Structure</span>Title · Header · Subheader · Markdown · Caption · Code</div>
+  <div class="card"><span class="label">Data</span>Dataframe · Table · data_editor · Metric · Charts</div>
+  <div class="card"><span class="label">Interact</span>Widgets · Forms · Validation &amp; warnings</div>
+  <div class="card"><span class="label">Organize</span>Sidebar · Columns · Tabs · Expander · Container</div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">7</span> Text Elements: โครงสร้างหน้า <span class="chip w9">W9</span></h2>
+<p>โครงสร้างที่มองเห็นชัดช่วยให้ผู้ใช้รู้ว่า<b>ต้องทำอะไร</b> และ<b>ผลลัพธ์หมายความว่าอะไร</b></p>
+<div class="table-wrap"><table>
+<thead><tr><th>คำสั่ง</th><th>บทบาท</th><th>ตัวอย่างการใช้</th></tr></thead>
+<tbody>
+<tr><td><code>st.set_page_config()</code></td><td>ตั้งค่าหน้า เช่น <code>page_title</code>, <code>page_icon</code> และ <code>layout="wide"</code></td><td>เรียกครั้งเดียว และควรเป็นคำสั่ง <code>st</code> แรกของแอป</td></tr>
+<tr><td><code>st.title()</code></td><td><b>Page identity</b>: ชื่อหน้า (ใหญ่สุด)</td><td>ชื่อแอป</td></tr>
+<tr><td><code>st.header()</code></td><td><b>Sections</b>: หัวข้อหลัก</td><td>“Section 2: Data display”</td></tr>
+<tr><td><code>st.subheader()</code></td><td><b>Subsections</b>: หัวข้อย่อย</td><td>“Line chart”</td></tr>
+<tr><td><code>st.markdown()</code></td><td>ข้อความแบบ Markdown เช่น <code>*เอียง*</code>, <code>**หนา**</code> หรือ list</td><td>คำอธิบาย</td></tr>
+<tr><td><code>st.caption()</code></td><td>ข้อความเล็กสีจาง (supporting detail)</td><td>หมายเหตุใต้ตาราง</td></tr>
+<tr><td><code>st.code(code, language=)</code></td><td>แสดง code block พร้อม syntax highlight</td><td>โชว์ตัวอย่างโค้ด</td></tr>
+<tr><td><code>st.latex()</code></td><td>แสดงสมการคณิตศาสตร์</td><td><code>st.latex(r"y=3x^2+2x-5")</code></td></tr>
+<tr><td><code>st.divider()</code></td><td>เส้นคั่น</td><td>แยก section</td></tr>
+<tr><td><code>st.write()</code></td><td><b>“ให้ Streamlit เลือกวิธีแสดงที่เหมาะกับ object เอง”</b></td><td>ใช้ได้กับ str, dict, DataFrame ฯลฯ</td></tr>
+</tbody></table></div>
+
+<script type="text/plain" class="code" data-title="Lab 09 · section_1_text_elements()">
+st.set_page_config(                       ##! ตั้งค่าหน้าเว็บ: title บนแท็บ browser, icon และ layout กว้าง
+    page_title="Streamlit Fundamentals",
+    page_icon="🎈",
+    layout="wide",
+)
+st.title("Section 1")                     ##! หัวเรื่องใหญ่สุด (page identity)
+st.header("Activity 1 ข้อความ")           ##! หัวข้อ section
+st.markdown("*นี่คือข้อความตัวอักษรเอียง*")   ##! Markdown: `*...*` = ตัวเอียง
+st.code("print('hi')", language="python")  ##! แสดงโค้ดในกรอบพร้อม highlight (ไม่ได้รันโค้ดนั้น)
+st.latex(r"y=3x^2 +2x -5")                 ##! แสดงสมการ (ใช้ raw string `r"..."` เพราะมีเครื่องหมาย `\` บ่อย)
+st.write({"SurName": "...", "StudentID": "66070018"})   ##! ส่ง dict ให้ `st.write` → Streamlit แสดงเป็น JSON ให้อัตโนมัติ
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">8</span> Displaying Data: แสดงข้อมูล vs แก้ไขข้อมูล <span class="chip w9">W9</span><span class="chip exam">★</span></h2>
+<p>สไลด์เน้นว่า “<b>การแสดงข้อมูล</b>” กับ “<b>การแก้ไขข้อมูล</b>” เป็นงานคนละแบบ</p>
+<div class="compare">
+  <div class="a"><span class="label">Present data · เป้าหมาย: ตรวจดู ค้นหา เรียง สรุป</span>
+    <ul>
+      <li><code>st.dataframe(df)</code>: ตาราง <b>interactive</b> ที่เลื่อน ปรับขนาด เรียงลำดับ และค้นหาได้</li>
+      <li><code>st.table(df.head())</code>: ตาราง <b>static</b> ที่แสดงทุกแถวตรง ๆ เหมาะกับตารางเล็กหรือตารางสรุป</li>
+      <li><code>st.write(df)</code>: ให้ Streamlit เลือกวิธีแสดงเอง (automatic display)</li>
+    </ul></div>
+  <div class="a"><span class="label">Collect changes / KPIs · เป้าหมาย: รับ input หรือสื่อผลลัพธ์</span>
+    <ul>
+      <li><code>st.data_editor(df)</code>: ให้ผู้ใช้<b>แก้ตารางได้</b> และ<b>คืน DataFrame ที่ถูกแก้แล้ว</b>ออกมา</li>
+      <li><code>st.metric(...)</code>: เน้นตัวเลขสำคัญ (KPI) พร้อม delta</li>
+    </ul>
+    <div class="callout warn" style="margin:8px 0 0"><b>⚠ Edits are not automatically saved to CSV.</b> สิ่งที่แก้ใน <code>data_editor</code> ไม่ได้เขียนกลับไฟล์ ถ้าอยากบันทึกต้องเขียนลงไฟล์หรือ database เอง</div></div>
+</div>
+
+<script type="text/plain" class="code" data-title="Lab 09 · section_2_data_display()">
+st.dataframe(df, width="stretch", hide_index=True)   ##! ตาราง interactive: `width="stretch"` ขยายเต็มความกว้าง container, `hide_index=True` ซ่อนคอลัมน์ index
+st.table(df.head(3))                                 ##! ตาราง static แสดง 3 แถวแรก (`head(3)`) เหมาะกับข้อมูลน้อย
+edited_df = st.data_editor(df, num_rows="dynamic")   ##! (จาก notebook) ให้แก้ข้อมูลได้, `num_rows="dynamic"` = เพิ่ม/ลบแถวได้, ค่าที่แก้คืนมาใน `edited_df` (ไม่เซฟลง CSV)
+st.metric(                                           ##! การ์ด KPI
+    label="Income",
+    value=1500,
+    delta=100,                                       ##! delta บวกแสดงลูกศรขึ้นสีเขียว
+    delta_color="normal",                            ##! normal: บวก=เขียว ลบ=แดง
+)
+st.metric(
+    label="Expenses",
+    value=900,
+    delta=-50,
+    delta_color="inverse",                           ##! inverse: กลับสี บวก=แดง ลบ=เขียว (ค่าใช้จ่ายลดลงถือเป็นเรื่องดี)
+    help="Total expense compared with last month",   ##! tooltip ไอคอน ? เมื่อ hover
+)
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">9</span> Visualizing Data: Charts &amp; Maps <span class="chip w9">W9</span></h2>
+<div class="compare">
+  <div class="a"><span class="label">Native Streamlit charts</span>
+    <p>สร้าง prototype จาก DataFrame ได้ทันที ทั้ง <code>line_chart</code>, <code>area_chart</code>, <code>bar_chart</code>, <code>scatter_chart</code> และ <code>map</code></p>
+    <p><b>เร็ว · สั้น · interactive</b></p></div>
+  <div class="a"><span class="label">Matplotlib</span>
+    <p>สร้าง <code>fig, ax</code> ปรับแต่งเอง แล้วส่งให้ <code>st.pyplot(fig)</code></p>
+    <p>คุมได้ละเอียดกว่า ทั้ง title, axes, markers, ticks และ legends <b>เหมาะเมื่อการนำเสนอสำคัญ</b></p></div>
+</div>
+<p>ทั้งสองแบบมี flow เดียวกันคือ <b>DataFrame → คำสั่ง visualization → output ที่ browser</b></p>
+
+<script type="text/plain" class="code" data-title="Lab 09 · section_3_charts_and_maps()">
+df = df.rename(columns={"year": "Year", "col1": "Web",
+                        "col2": "Mobile", "col3": "Desktop"})   ##! เปลี่ยนชื่อคอลัมน์ให้อ่านง่าย (คืน DataFrame ใหม่ จึงต้อง assign กลับ)
+st.line_chart(df, x="Year", y=["Web", "Mobile", "Desktop"],
+              x_label="Year", y_label="Amounts of Users")  ##! `x` คือคอลัมน์แกน X, `y` เป็น list ได้หลายเส้น
+st.area_chart(df, x="Year", y=["Web", "Mobile"])           ##! กราฟพื้นที่
+st.bar_chart(df, x="Year", y=["Web", "Mobile", "Desktop"]) ##! กราฟแท่ง
+st.scatter_chart(df, x="Year", y="Mobile",
+                 size="Desktop", color="Year")             ##! scatter: `size` กำหนดขนาดจุดตามคอลัมน์, `color` กำหนดสีตามคอลัมน์
+st.map(geo_df)                                             ##! แผนที่: DataFrame ต้องมีคอลัมน์ `latitude` และ `longitude`
+
+fig, ax = plt.subplots()                                   ##! Matplotlib: สร้าง Figure (`fig`) และ Axes (`ax`)
+for platform in ["Web", "Mobile", "Desktop"]:
+    ax.plot(df["Year"], df[platform], marker="o", label=platform)   ##! เส้นละ platform, `marker="o"` ใส่จุด, `label` ไว้ใช้กับ legend
+ax.set_title("My figure title")                            ##! ปรับแต่ง title และ label ของแกน
+ax.set_xticks(df["Year"])
+ax.tick_params(axis="x", labelrotation=45)                 ##! หมุน label แกน X 45 องศา
+ax.legend()
+fig.tight_layout()
+st.pyplot(fig)                                             ##! ส่ง figure ให้ Streamlit แสดงในหน้าเว็บ
+plt.close(fig)                                             ##! ปิด figure คืน memory (สำคัญเพราะ rerun บ่อย)
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">10</span> Input Widgets: เลือก widget ตามประเภทการตัดสินใจ <span class="chip w9">W9</span><span class="chip exam">★</span></h2>
+<div class="callout key"><div class="callout-title">💡 หลักสำคัญ</div><b>ค่าที่ widget คืนมา (return value) คือ Python value ธรรมดา</b> เอาไปใช้ใน <code>if</code> คำนวณ หรือส่งให้ฟังก์ชันได้ทันที</div>
+<div class="table-wrap"><table>
+<thead><tr><th>กลุ่ม</th><th>Widget</th><th>คืนค่าเป็น</th><th>ใช้เมื่อ</th></tr></thead>
+<tbody>
+<tr><td rowspan="2"><b>A · Actions</b><br><span class="small muted">trigger / toggle</span></td><td><code>st.button()</code></td><td><code>True</code> <b>เฉพาะรอบที่ถูกกด</b> รอบอื่นเป็น <code>False</code></td><td>สั่งให้ทำ action</td></tr>
+<tr><td><code>st.checkbox()</code></td><td><code>bool</code> (ติ๊ก = True)</td><td>เปิด/ปิดตัวเลือกอิสระ</td></tr>
+<tr><td rowspan="3"><b>B · Selection</b><br><span class="small muted">เลือก 1 หรือหลายตัว</span></td><td><code>st.radio()</code></td><td>ค่าที่เลือก 1 ค่า</td><td>ตัวเลือกน้อย อยากให้เห็นทั้งหมด</td></tr>
+<tr><td><code>st.selectbox()</code></td><td>ค่าที่เลือก 1 ค่า</td><td>dropdown สำหรับตัวเลือกเยอะ</td></tr>
+<tr><td><code>st.multiselect()</code></td><td><code>list</code> ของค่าที่เลือก (อาจว่าง <code>[]</code>)</td><td>เลือกได้หลายตัว</td></tr>
+<tr><td rowspan="4"><b>C · Values</b></td><td><code>st.slider()</code></td><td>ตัวเลข (หรือ <code>tuple</code> ถ้า value เป็นช่วง)</td><td>เลือกค่าในช่วง เช่น ช่วงปี หรือ creativity level</td></tr>
+<tr><td><code>st.number_input()</code></td><td>ตัวเลขที่พิมพ์</td><td>ต้องการค่าที่แน่นอน</td></tr>
+<tr><td><code>st.text_input()</code></td><td><code>str</code> สั้น</td><td>ชื่อ, keyword, title</td></tr>
+<tr><td><code>st.text_area()</code></td><td><code>str</code> หลายบรรทัด</td><td>prompt หรือคำอธิบายยาว</td></tr>
+</tbody></table></div>
+<ul>
+<li><b>Numeric input</b>: ใช้ <code>min_value</code>, <code>max_value</code>, ค่า default และ <code>step</code> ให้เหมาะกับงาน</li>
+<li><b>Text input</b>: ควร<b>ตรวจค่าก่อนประมวลผล</b> (เช่น ข้อความว่าง)</li>
+<li><b>Good labels reduce the amount of explanation your interface needs</b>: ตั้ง label ดี ๆ แล้วแทบไม่ต้องอธิบายเพิ่ม</li>
+<li><b>Validate empty selections: show a warning, not an error</b>: ถ้าผู้ใช้ยังไม่เลือก ให้เตือนด้วย <code>st.warning</code> ไม่ต้องปล่อยให้โปรแกรม error</li>
+</ul>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> Widget คืนค่าอะไรให้ Python?</div>
+  <div class="sim-body">
+    <p class="howto">ลองเปลี่ยนค่าแต่ละ widget แล้วดูว่า Python ได้ค่าอะไร <b>ทุกครั้งที่เปลี่ยน = 1 rerun</b> สังเกตว่า <code>st.button</code> เป็น <code>True</code> แค่รอบที่กด พอ widget อื่นทำให้ rerun ก็กลับเป็น <code>False</code></p>
+    <div class="small muted" id="wgRun">Rerun #0</div>
+    <div id="wgList"></div>
+  </div>
+</div>
+
+<h3>ตัวอย่างจาก Lab: Multiselect + chart แบบ dynamic + validation</h3>
+<script type="text/plain" class="code" data-title="Lab 09 · section_4_input_widgets()">
+selectable_columns = list(df.columns[1:])        ##! เอาทุกคอลัมน์ยกเว้นคอลัมน์แรก (year) มาเป็นตัวเลือก
+chart_type = st.selectbox("Choose chart type",
+                          options=["Line", "Area", "Bar"])   ##! คืน string 1 ค่า เช่น "Line"
+selected_columns = st.multiselect(
+    "Choose columns to display",
+    options=selectable_columns,
+    default=["col1"],                            ##! ค่าเริ่มต้นที่ถูกเลือกไว้
+    max_selections=3,                            ##! เลือกได้สูงสุด 3 ตัว
+)                                                ##! คืนค่าเป็น **list** เช่น `["col1", "col3"]`
+if selected_columns:                             ##! list ว่างมีค่าเป็น False จึงใช้เช็กว่า “เลือกแล้วหรือยัง”
+    chart_functions = {
+        "Line": st.line_chart,                   ##! เก็บ **ตัวฟังก์ชัน** (ไม่มีวงเล็บ = ยังไม่เรียก) ไว้ใน dict
+        "Area": st.area_chart,
+        "Bar": st.bar_chart,
+    }
+    chart_functions[chart_type](df, x="year", y=selected_columns)   ##! ดึงฟังก์ชันตามชนิดที่เลือกแล้ว **เรียก** ด้วย `(...)` แทนการเขียน if/elif หลายชั้น
+else:
+    st.warning("Please select at least one column.")   ##! validation: ไม่ได้เลือกอะไรก็เตือน (warning ไม่ใช่ error)
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">11</span> Forms: รวม input แล้วส่งทีเดียว <span class="chip w9">W9</span><span class="chip exam">★★</span></h2>
+<div class="compare">
+  <div class="b"><span class="label">ไม่ใช้ form</span><p>เปลี่ยนค่า widget แต่ละครั้งก็จะ<b>เข้าสู่วงจร rerun ตามปกติ</b> พิมพ์ทีหนึ่งก็ rerun ทีหนึ่ง</p></div>
+  <div class="a"><span class="label">อยู่ใน form</span><p>ค่าจะถูก<b>เก็บรวมไว้ แล้วส่งพร้อมกันตอนกด submit</b> เปลี่ยนค่าใน form จะยังไม่ rerun จนกว่าจะกด <code>st.form_submit_button</code></p></div>
+</div>
+<p>Form จึงเหมาะกับ<b>แบบฟอร์มที่ต้องกรอกหลายช่องก่อนประมวลผล</b> เช่น request ไปหา AI ซึ่ง Week 9 ทำแค่ถึงขั้นสรุป request ยังไม่เรียก model หรือ API จริง</p>
+
+<div class="sim">
+  <div class="sim-head"><span class="tag">ลองเล่น</span> นับ rerun: มี form vs ไม่มี form</div>
+  <div class="sim-body">
+    <p class="howto">ลองพิมพ์ข้อความหรือเลื่อน slider ทั้งสองฝั่ง แล้วดูตัวนับ rerun</p>
+    <div class="grid c2">
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>ไม่มี form</span></div><div class="content">
+        <div class="small muted">Prompt</div><input type="text" id="nfText" placeholder="พิมพ์ทีละตัวอักษร..." style="width:100%">
+        <div class="small muted" style="margin-top:8px">Temperature <span id="nfTv">0.5</span></div><input type="range" id="nfRange" min="0" max="1" step="0.1" value="0.5" style="width:100%">
+        <div class="out" style="margin-top:10px">Reruns: <b id="nfCount">0</b><div id="nfLog" class="small"></div></div>
+      </div></div>
+      <div class="fake-app"><div class="bar"><i></i><i></i><i></i><span>with st.form("ai_request")</span></div><div class="content">
+        <div style="border:1px dashed var(--border);border-radius:8px;padding:10px">
+          <div class="small muted">Prompt</div><input type="text" id="fText" placeholder="พิมพ์ได้เต็มที่..." style="width:100%">
+          <div class="small muted" style="margin-top:8px">Temperature <span id="fTv">0.5</span></div><input type="range" id="fRange" min="0" max="1" step="0.1" value="0.5" style="width:100%">
+          <button class="btn primary sm" id="fSubmit" type="button" style="margin-top:8px">Submit</button>
+        </div>
+        <div class="out" style="margin-top:10px">Reruns: <b id="fCount">0</b><div id="fLog" class="small"></div></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" class="code" data-title="Lab 09 · section_5_forms()">
+with st.form("order_form"):                    ##! เปิด form ด้วย key ที่ไม่ซ้ำ ("order_form") widget ข้างใน block นี้อยู่ใน form ทั้งหมด
+    task_type = st.selectbox("Task type",
+        options=["Summarization", "Translation", "Classification"])
+    model = st.selectbox("Model", options=["GPT-5", "Gemini", "Claude"])
+    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0)   ##! เลื่อน slider ใน form → **ยังไม่ rerun**
+    prompt = st.text_area("Prompt", placeholder="พิมพ์ Prompt ได้เลยจ้า")
+    no_personal_data = st.checkbox("ไม่มีข้อมูลส่วนบุคคล")
+    submit_btn = st.form_submit_button("Submit", type="primary")   ##! **ทุก form ต้องมี submit button** กดแล้วค่าทั้งหมดถูกส่งพร้อมกันและเกิด rerun 1 ครั้ง
+
+if submit_btn:                                 ##! อยู่นอก `with` และเป็น True เฉพาะรอบที่กด Submit
+    st.success("Your order has been submitted.")
+    st.markdown(f"""
+    ### Request Summary
+    - **task_type:** {task_type}
+    - **temperature:** {temperature}
+    - **prompt:** {prompt if prompt else "None specified"}
+    """)                                       ##! f-string + conditional expression: ถ้า prompt ว่างให้แสดง "None specified"
+</script>
+<div class="callout warn"><div class="callout-title">⚠ กฎของ form ที่ควรรู้</div>
+<ul style="margin:0">
+<li>form ต้องมี <code>st.form_submit_button</code> เสมอ</li>
+<li>ใช้ <code>st.button</code> ธรรมดาภายใน form ไม่ได้ ต้องใช้ <code>form_submit_button</code></li>
+<li>ใน Week 11 ถ้าจะใส่ callback ให้ form ต้องใส่ที่ <b>submit button</b></li>
+</ul></div>
+
+<!-- ===================================================== -->
+<h2><span class="num">12</span> Layout &amp; Organization <span class="chip w9">W9</span><span class="chip exam">★</span></h2>
+<p>หลัก: <b>จัด content ที่เกี่ยวข้องไว้ด้วยกัน</b> อย่าให้ control กับ output กระจัดกระจาย</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Element</th><th>หน้าที่</th><th>วิธีเขียน</th></tr></thead>
+<tbody>
+<tr><td><b>Sidebar</b></td><td>ที่วาง <b>global controls</b> (ตัวควบคุมที่มีผลกับทั้งหน้า)</td><td><code>st.sidebar.slider(...)</code> หรือ <code>with st.sidebar:</code></td></tr>
+<tr><td><b>Columns</b></td><td>วางของ<b>เคียงข้างกัน</b> เช่น metric หลายตัว</td><td><code>c1, c2, c3 = st.columns(3)</code></td></tr>
+<tr><td><b>Tabs</b></td><td>สลับ<b>มุมมอง</b>ของข้อมูลชุดเดียวกัน เช่น Chart / Table / Map</td><td><code>t1, t2 = st.tabs(["Chart", "Table"])</code></td></tr>
+<tr><td><b>Expander</b></td><td>ซ่อน<b>รายละเอียดเสริม</b>ไว้ ให้กดดูเมื่อต้องการ</td><td><code>with st.expander("Details"):</code></td></tr>
+<tr><td><b>Container</b></td><td>จัดกลุ่ม element ให้อยู่ด้วยกัน (มีกรอบได้)</td><td><code>with st.container(border=True):</code></td></tr>
+</tbody></table></div>
+
+<div class="callout key"><div class="callout-title">🎯 จังหวะของ dashboard ที่ดี (ออกสอบ!)</div>
+<div class="flow" style="margin:6px 0 0">
+  <div class="step"><b>1</b>Controls (sidebar)</div><div class="arrow">→</div>
+  <div class="step"><b>2</b>Key metrics (columns)</div><div class="arrow">→</div>
+  <div class="step"><b>3</b>Main views (tabs)</div><div class="arrow">→</div>
+  <div class="step"><b>4</b>Optional details (expander)</div>
+</div></div>
+
+<div class="diagram" aria-label="ตัวอย่าง layout">
+  <div style="display:grid;grid-template-columns:150px 1fr;gap:10px;min-width:520px;font-size:13.5px">
+    <div class="panel" style="grid-row:span 4"><b>Sidebar</b><br>ช่วงปี (slider)<br>ชนิดกราฟ (selectbox)<br>แพลตฟอร์ม (multiselect)</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"><div class="panel center">Web<br><b>34</b> ↑18</div><div class="panel center">Mobile<br><b>40</b> ↑25</div><div class="panel center">Desktop<br><b>45</b> ↑25</div></div>
+    <div class="panel"><b>Tabs:</b> <span class="pill">Chart</span> <span class="pill">Table</span> <span class="pill">Map</span><div style="height:46px;margin-top:6px;border-radius:6px;background:linear-gradient(90deg,var(--surface-3),transparent)"></div></div>
+    <div class="panel">▸ <b>Expander:</b> Dataset description</div>
+    <div class="panel" style="border:2px solid var(--border)"><b>Container(border=True):</b> สรุปข้อมูลที่เลือก</div>
+  </div>
+</div>
+
+<script type="text/plain" class="code" data-title="Lab 09 · section_6_layout_and_organization()">
+st.sidebar.header("Dashboard settings")            ##! `st.sidebar.<element>` = วาง element ไว้ใน sidebar
+selected_years = st.sidebar.slider(
+    "ช่วงปีที่ต้องการดู",
+    min_value=int(df["year"].min()),
+    max_value=int(df["year"].max()),
+    value=(int(df["year"].min()), int(df["year"].max())),   ##! value เป็น **tuple 2 ค่า** → slider กลายเป็นแบบเลือกช่วง และคืนค่าเป็น tuple `(start, end)`
+)
+sidebar_columns = st.sidebar.multiselect(
+    "แพลตฟอร์มที่ต้องการแสดง",
+    options=selectable_columns,
+    default=selectable_columns,
+    format_func=lambda column: platform_names[column],   ##! แสดงชื่อสวย ("Web") แต่ค่าที่คืนยังเป็นชื่อคอลัมน์จริง ("col1")
+)
+filtered_df = df[df["year"].between(*selected_years)]   ##! `*` แตก tuple เป็น 2 arguments → `between(start, end)` แล้วกรองแถว
+last_row = filtered_df.iloc[-1]                     ##! แถวสุดท้าย (ปีล่าสุดในช่วง)
+first_row = filtered_df.iloc[0]
+
+metric_columns = st.columns(3, gap="medium", border=True)   ##! สร้าง 3 คอลัมน์ มีกรอบ คืนค่าเป็น list ของคอลัมน์
+for column, metric_column in zip(selectable_columns, metric_columns):   ##! `zip` จับคู่ ชื่อคอลัมน์ ↔ ช่อง column
+    with metric_column:
+        metric_column.metric(platform_names[column],
+            value=int(last_row[column]),
+            delta=int(last_row[column] - first_row[column]))   ##! delta = ปีท้าย - ปีแรก ของช่วงที่เลือก
+
+chart_tab, table_tab, map_tab = st.tabs(["Chart", "Table", "Map"])   ##! `st.tabs` คืน tab ตามจำนวนชื่อ เราจึง unpack เป็น 3 ตัวแปร
+with chart_tab:
+    if not sidebar_columns:
+        st.warning("กรุณาเลือกอย่างน้อย 1 แพลตฟอร์มจาก Sidebar")
+    else:
+        chart_functions[sidebar_chart](filtered_df, x="year", y=sidebar_columns)
+with table_tab:
+    st.dataframe(filtered_df, width="stretch", hide_index=True)
+with map_tab:
+    st.map(geo_df)
+
+with st.expander("Dataset description", expanded=True, icon="🗂️"):   ##! `expanded=True` = เปิดไว้ตั้งแต่แรก
+    st.dataframe(filtered_df.describe(), width="stretch")   ##! `describe()` = สถิติสรุป (count, mean, std, min, max ...)
+
+with st.container(border=True):                     ##! container มีกรอบ จัดกลุ่มสรุปไว้ด้วยกัน
+    st.subheader("สรุปข้อมูลที่เลือก")
+    summary_rows, summary_columns, summary_years = st.columns(3, gap="medium")
+    summary_rows.metric("จำนวนแถว", len(filtered_df))
+</script>
+
+<h3>Pattern การทำเมนูนำทางด้วย dict ของฟังก์ชัน (ท้ายไฟล์ main.py)</h3>
+<script type="text/plain" class="code" data-title="Lab 09 · main.py (ท้ายไฟล์)">
+SECTIONS = {
+    "1. Text elements": section_1_text_elements,      ##! key = ข้อความในเมนู, value = **ตัวฟังก์ชัน** (ยังไม่เรียก)
+    "2. Data display": section_2_data_display,
+    "6. Layout and organization": section_6_layout_and_organization,
+}
+st.sidebar.title("Streamlit Fundamentals")
+selected_section = st.sidebar.radio(
+    "Choose a section",
+    options=list(SECTIONS.keys()),                    ##! เอา key ทั้งหมดมาเป็นตัวเลือกของ radio
+)
+SECTIONS[selected_section]()                          ##! ดึงฟังก์ชันของ section ที่เลือกแล้ว **เรียก** ด้วย `()` ทุก rerun จะวาดเฉพาะ section นั้น
+</script>
+
+<!-- ===================================================== -->
+<h2><span class="num">13</span> Wrap-up: สิ่งที่ต้องติดตัวไป <span class="chip w9">W9</span></h2>
+<ol class="steps">
+  <li><b>Python รันบน Streamlit server</b> ส่วน browser เป็น client</li>
+  <li><b>การโต้ตอบกับ widget ทำให้ script rerun จากบนลงล่างได้</b></li>
+  <li>ใช้ building blocks รวม <b>input + data + processing</b> ให้เป็นแอปที่เป็นระเบียบ</li>
+</ol>
+<div class="flow">
+  <div class="step"><b>Week 9</b>Foundation (rerun model)</div><div class="arrow">→</div>
+  <div class="step"><b>Week 10</b>Caching</div><div class="arrow">→</div>
+  <div class="step"><b>Week 11</b>Session State</div>
+</div>
+
+<!-- ===================================================== -->
+<h2><span class="num">✎</span> แบบฝึกหัดท้ายบท Week 9 <span class="chip w9">W9</span></h2>
+<p class="muted">ข้อกาตรวจทันทีพร้อมเหตุผล ส่วนข้อเขียนให้ลองตอบก่อนแล้วค่อยกด “ดูแนวคำตอบ” ระบบจะเช็กว่าคุณเขียนถึงคำสำคัญครบไหม</p>
+<div class="quiz-mount" data-week="w9"></div>
+
+<div class="pager" data-auto></div>
+</main>
+</div>
+<footer class="site">สรุปจากสไลด์และ Lab ของวิชา 06016474 Applied AI for IT · Week 9</footer>
+
+<script src="assets/q-w9.js"></script>
+<script src="assets/app.js"></script>
+<script>
+document.addEventListener("aait:ready", () => {
+  const { $, renderCode, sortGame, esc } = AAIT;
+
+  /* ---------- server vs browser ---------- */
+  sortGame($("#sortServer"), {
+    options: ["Server", "Browser"],
+    items: [
+      { text: "<code>pd.read_csv(\"data/sample.csv\")</code>", answer: 0, why: "Python อ่านไฟล์จาก file system ของ <b>server</b>" },
+      { text: "แสดงปุ่ม ตาราง และกราฟให้ผู้ใช้เห็น", answer: 1, why: "browser มีหน้าที่ render UI ตามที่ server ส่งมา" },
+      { text: "<code>model.predict(text)</code> ของ model ขนาดใหญ่", answer: 0, why: "model ใช้ memory และ compute ของเครื่องที่รัน server" },
+      { text: "ผู้ใช้คลิกปุ่มหรือพิมพ์ข้อความ", answer: 1, why: "action ของผู้ใช้เกิดที่ browser แล้วถูกส่งไป server ผ่าน WebSocket" },
+      { text: "ใช้ secret API key เรียก external API", answer: 0, why: "key ลับต้องอยู่บน server เท่านั้น ห้ามส่งไปเป็นโค้ดฝั่ง browser" },
+      { text: "รันคำสั่ง <code>if submitted: history.append(message)</code>", answer: 0, why: "Python ทุกบรรทัด (รวมถึง if/append) รันบน server" },
+    ],
+  });
+
+  /* ---------- rerun visualizer ---------- */
+  const CODE = {
+    plain: `import streamlit as st
+history = []
+with st.form("message_form", clear_on_submit=True):
+    message = st.text_input("Enter a message:")
+    submitted = st.form_submit_button("Add")
+if submitted:
+    history.append(message)
+st.write("History:", history)`,
+    state: `import streamlit as st
+if "history" not in st.session_state:
+    st.session_state.history = []
+with st.form("message_form", clear_on_submit=True):
+    message = st.text_input("Enter a message:")
+    submitted = st.form_submit_button("Add")
+if submitted:
+    st.session_state.history.append(message)
+st.write("History:", st.session_state.history)`,
+  };
+  let mode = "plain", runNo = 0, busy = false, session = {};
+  let block;
+  const codeBox = $("#rrCode");
+  const pyRepr = (v) => Array.isArray(v) ? "[" + v.map(pyRepr).join(", ") + "]" : typeof v === "string" ? `'${v}'` : v === true ? "True" : v === false ? "False" : String(v);
+  function drawCode() { codeBox.innerHTML = ""; block = renderCode(CODE[mode], { title: "main.py" }); codeBox.appendChild(block.el); }
+  const wait = (ms) => new Promise((r) => setTimeout(r, $("#rrFast").checked ? 0 : ms));
+  function showVars(v) { $("#rrVars").innerHTML = Object.keys(v).length ? Object.entries(v).map(([k, x]) => `${esc(k)} = ${esc(pyRepr(x))}`).join("<br>") : "-"; }
+  function showState() { $("#rrState").innerHTML = mode === "state" ? esc(JSON.stringify(session).replace(/"/g, "'").replace(/,/g, ", ")) : "<span class='muted'>(ไม่ได้ใช้)</span>"; }
+  async function run(submitted, msg) {
+    if (busy) return; busy = true;
+    runNo++;
+    $("#rrRun").textContent = `Run #${runNo} — ${submitted ? "เกิดจากการกด Add" : "โหลดหน้าแรก"} · สคริปต์กำลังรันจากบนลงล่าง...`;
+    const vars = {};
+    const step = async (line, fn) => { block.setHighlight([line]); if (fn) fn(); showVars(vars); showState(); await wait(260); };
+    if (mode === "plain") {
+      await step(1);
+      await step(2, () => { vars.history = []; });
+      await step(3);
+      await step(4, () => { vars.message = submitted ? msg : ""; });
+      await step(5, () => { vars.submitted = submitted; });
+      await step(6);
+      if (submitted) await step(7, () => vars.history.push(msg));
+      await step(8, () => { $("#rrOut").textContent = "History: " + pyRepr(vars.history); });
+    } else {
+      await step(1);
+      await step(2);
+      if (!("history" in session)) await step(3, () => { session.history = []; });
+      await step(4);
+      await step(5, () => { vars.message = submitted ? msg : ""; });
+      await step(6, () => { vars.submitted = submitted; });
+      await step(7);
+      if (submitted) await step(8, () => session.history.push(msg));
+      await step(9, () => { $("#rrOut").textContent = "History: " + pyRepr(session.history); });
+    }
+    block.setHighlight([]);
+    $("#rrRun").textContent = `Run #${runNo} จบแล้ว — ` + (mode === "plain" ? "ตัวแปร history ของรอบนี้จะหายไป รอบหน้าเริ่มจาก [] ใหม่" : "session_state ยังเก็บ history ไว้สำหรับรอบถัดไป");
+    busy = false;
+  }
+  $("#rrMode").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || busy) return;
+    mode = b.dataset.m; runNo = 0; session = {};
+    $("#rrMode").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    drawCode(); $("#rrOut").textContent = "History: []"; run(false, "");
+  });
+  $("#rrAdd").addEventListener("click", () => { const v = $("#rrInput").value.trim() || "msg"; $("#rrInput").value = ""; run(true, v); });
+  $("#rrInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#rrAdd").click(); });
+  drawCode(); run(false, "");
+
+  /* ---------- widget playground ---------- */
+  let wRun = 0, clickedThisRun = false;
+  const W = [
+    { code: 'clicked = st.button("Run")', html: '<button class="btn sm primary" type="button">Run</button>', read: () => clickedThisRun, ev: "click", isBtn: true },
+    { code: 'agree = st.checkbox("I agree")', html: '<label><input type="checkbox"> I agree</label>', read: (el) => el.querySelector("input").checked },
+    { code: 'size = st.radio("Size", ["S", "M", "L"])', html: '<label><input type="radio" name="wr" value="S" checked> S</label> <label><input type="radio" name="wr" value="M"> M</label> <label><input type="radio" name="wr" value="L"> L</label>', read: (el) => el.querySelector("input:checked").value },
+    { code: 'task = st.selectbox("Task", ["Summarization", "Translation"])', html: '<select><option>Summarization</option><option>Translation</option></select>', read: (el) => el.querySelector("select").value, ev: "change" },
+    { code: 'cols = st.multiselect("Columns", ["col1", "col2", "col3"], default=["col1"])', html: '<label><input type="checkbox" value="col1" checked> col1</label> <label><input type="checkbox" value="col2"> col2</label> <label><input type="checkbox" value="col3"> col3</label>', read: (el) => [...el.querySelectorAll("input:checked")].map((i) => i.value) },
+    { code: 'level = st.slider("Level", 1, 10, 5)', html: '<input type="range" min="1" max="10" value="5">', read: (el) => +el.querySelector("input").value, ev: "change" },
+    { code: 'temp = st.number_input("Temp", value=0.7, step=0.1)', html: '<input type="number" value="0.7" step="0.1" style="width:100px">', read: (el) => parseFloat(el.querySelector("input").value || "0"), ev: "change" },
+    { code: 'name = st.text_input("Name")', html: '<input type="text" placeholder="พิมพ์แล้วกด Enter / คลิกที่อื่น">', read: (el) => el.querySelector("input").value, ev: "change" },
+    { code: 'prompt = st.text_area("Prompt")', html: '<textarea style="min-height:56px" placeholder="หลายบรรทัดได้"></textarea>', read: (el) => el.querySelector("textarea").value, ev: "change" },
+  ];
+  const list = $("#wgList");
+  const typeOf = (v) => Array.isArray(v) ? "list" : typeof v === "boolean" ? "bool" : typeof v === "number" ? (Number.isInteger(v) && !String(v).includes(".") ? "int" : "float") : "str";
+  W.forEach((w) => {
+    const row = document.createElement("div");
+    row.className = "sort-item";
+    row.innerHTML = `<div style="flex:1 1 280px"><div class="mono small">${esc(w.code)}</div><div style="margin-top:4px" class="ctl">${w.html}</div></div><div class="out" style="flex:1 1 200px;min-height:0"></div>`;
+    w.el = row; w.out = row.querySelector(".out");
+    list.appendChild(row);
+    row.querySelector(".ctl").addEventListener(w.ev || "change", (e) => {
+      if (w.isBtn) { clickedThisRun = true; rerun(); clickedThisRun = false; return; }
+      rerun();
+    });
+  });
+  function rerun() {
+    wRun++;
+    $("#wgRun").textContent = `Rerun #${wRun} (script รันใหม่ทั้งไฟล์ ทุก widget ถูกอ่านค่าใหม่)`;
+    W.forEach((w) => {
+      const v = w.read(w.el);
+      const r = Array.isArray(v) ? "[" + v.map((x) => `'${x}'`).join(", ") + "]" : typeof v === "string" ? `'${v}'` : typeof v === "boolean" ? (v ? "True" : "False") : (Number.isInteger(v) && w.code.includes("0.7") ? v.toFixed(1) : String(v));
+      const t = w.code.includes("number_input") ? "float" : typeOf(v);
+      w.out.innerHTML = `${esc(w.code.split(" = ")[0])} = <b>${esc(r)}</b> <span class="muted">(${t})</span>`;
+      w.out.classList.remove("flash"); void w.out.offsetWidth; w.out.classList.add("flash");
+    });
+  }
+  rerun();
+
+  /* ---------- form vs no form ---------- */
+  let nf = 0, f = 0;
+  const logNF = (s) => { nf++; $("#nfCount").textContent = nf; $("#nfLog").innerHTML = esc(s); };
+  $("#nfText").addEventListener("input", (e) => logNF(`rerun! prompt = '${e.target.value}'`));
+  $("#nfRange").addEventListener("input", (e) => { $("#nfTv").textContent = e.target.value; logNF(`rerun! temperature = ${e.target.value}`); });
+  $("#fRange").addEventListener("input", (e) => { $("#fTv").textContent = e.target.value; });
+  $("#fSubmit").addEventListener("click", () => { f++; $("#fCount").textContent = f; $("#fLog").innerHTML = esc(`rerun! submitted=True, prompt='${$("#fText").value}', temperature=${$("#fRange").value}`); });
+});
+</script>
+</body>
+</html>
